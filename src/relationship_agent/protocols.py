@@ -1,0 +1,19 @@
+"""Storage boundary for the shared workflow; no dependency on a web app or database."""
+
+from typing import Any, Protocol
+
+
+class WorkflowStore(Protocol):
+    def run(self, run_id: str) -> dict[str, Any]: ...
+
+    def latest_report(self, session_id: str) -> dict[str, Any] | None: ...
+
+    def checkpoint(self, run_id: str, state: dict[str, Any]) -> None: ...
+
+    def trace(
+        self, run_id: str, event: str, detail: dict[str, Any] | None = None
+    ) -> None: ...
+
+    def finish(self, run_id: str, result: dict[str, Any], records: list) -> None: ...
+
+    def fail(self, run_id: str, error: str) -> None: ...

@@ -8,21 +8,22 @@ version = "0.3.0"
 description = "Persona AI: person-aware relationship memory with a checkpointed agent harness"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["fastapi==0.142.2", "sqlalchemy==2.0.54", "psycopg[binary]==3.3.6", "uvicorn==0.53.0", "python-dotenv==1.2.3", "cryptography==50.0.1"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.20,<2"]
-beta = ["fastapi==0.142.2", "sqlalchemy==2.0.54", "psycopg[binary]==3.3.6", "uvicorn==0.53.0", "python-dotenv==1.2.3", "cryptography==50.0.1"]
+# Kept as an installation alias for existing deployment commands.
+beta = []
 test = ["httpx==0.28.1", "playwright==1.63.0"]
 
 [project.scripts]
-relationship-agent = "relationship_agent.cli:main"
-relationship-agent-web = "relationship_agent.server:main"
-relationship-agent-mcp = "relationship_agent.mcp_server:main"
+relationship-agent = "relationship_agent.beta.app:main"
+relationship-agent-web = "relationship_agent.beta.app:main"
+relationship-agent-mcp = "relationship_agent.beta.mcp_server:main"
 persona-ai = "relationship_agent.beta.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-relationship_agent = ["web/*.html", "web/*.js", "web/*.css", "persona_web/*.html", "persona_web/*.js", "persona_web/*.css"]
+relationship_agent = ["persona_web/*.html", "persona_web/*.js", "persona_web/*.css"]

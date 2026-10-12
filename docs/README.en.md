@@ -34,4 +34,4 @@ See [deployment](deployment.md), [architecture](persona-architecture.md), [evalu
 
 ## Verification
 
-90 independent local tests passed. [GitHub CI](https://github.com/y011124/relationship-agent/actions/runs/37314361389) passed on Python 3.10/3.12, PostgreSQL 17, Docker and Chromium browser flows. All fixtures are synthetic; no live-model quality or real-user outcome is claimed.
+The 2026-10-09 cleanup unifies all launchers on Persona AI and removes the retired server, UI and single-user store. Current local evidence: 91 independent regressions, 8 structural scenarios, 160 mock turns, clean-wheel checks, and in-app browser acceptance. Headless Chromium is blocked by the local macOS sandbox; the standalone browser script and current PostgreSQL/container CI still need an unrestricted runner. No current cloud deployment or live-model quality is claimed. See [verification](verification.md) and [migration](migration.md).

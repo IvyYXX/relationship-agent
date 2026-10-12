@@ -4,10 +4,10 @@ The first version deliberately uses deterministic lexical retrieval. It keeps th
 retrieved text and source together so a vector index can be added later without
 changing the Agent contract.
 """
+
 from __future__ import annotations
 
 import re
-
 
 DOCUMENTS = [
     {
@@ -42,14 +42,28 @@ DOCUMENTS = [
 
 
 def _tokens(value: str) -> list[str]:
-    return [x.lower() for x in re.findall(r"[\w\u4e00-\u9fff]+", value or "") if len(x) > 1]
+    return [
+        x.lower() for x in re.findall(r"[\w\u4e00-\u9fff]+", value or "") if len(x) > 1
+    ]
 
 
 ENGLISH = {
-    "uncertainty": ("Relationship uncertainty and reassurance", "When an important relationship lacks clear responses, people may repeatedly check messages and seek explanations. Reassurance can offer temporary relief while keeping attention on unknowns. Separate reported facts, feelings and unverified explanations before choosing what information or boundaries you need."),
-    "communication": ("A structure for difficult conversations", "Describe a specific observation, express your feelings and needs, then make a clear request the other person can decline. Separate requests from accusations. The other person's response and timing remain outside your control."),
-    "attachment": ("Limits of attachment concepts", "Attachment concepts can help describe patterns of security, closeness and withdrawal. One conflict or chat is insufficient to determine a person's attachment style. Use these concepts for reflection, not diagnosis. Consider qualified professional support when difficulties persistently affect daily life."),
-    "signals": ("Signals and information asymmetry", "When people have different information, silence, initiative and promises may be interpreted as signals. A signal does not prove a single cause. Compare evidence for different explanations, the cost of checking and boundary risks before inferring motives."),
+    "uncertainty": (
+        "Relationship uncertainty and reassurance",
+        "When an important relationship lacks clear responses, people may repeatedly check messages and seek explanations. Reassurance can offer temporary relief while keeping attention on unknowns. Separate reported facts, feelings and unverified explanations before choosing what information or boundaries you need.",
+    ),
+    "communication": (
+        "A structure for difficult conversations",
+        "Describe a specific observation, express your feelings and needs, then make a clear request the other person can decline. Separate requests from accusations. The other person's response and timing remain outside your control.",
+    ),
+    "attachment": (
+        "Limits of attachment concepts",
+        "Attachment concepts can help describe patterns of security, closeness and withdrawal. One conflict or chat is insufficient to determine a person's attachment style. Use these concepts for reflection, not diagnosis. Consider qualified professional support when difficulties persistently affect daily life.",
+    ),
+    "signals": (
+        "Signals and information asymmetry",
+        "When people have different information, silence, initiative and promises may be interpreted as signals. A signal does not prove a single cause. Compare evidence for different explanations, the cost of checking and boundary risks before inferring motives.",
+    ),
 }
 
 
@@ -59,11 +73,26 @@ def search(query: str, limit: int = 3, language: str = "zh") -> list[dict]:
     scored = []
     for doc in DOCUMENTS:
         haystack = set(_tokens(" ".join((doc["title"], doc["text"], doc["tags"]))))
-        score = sum(2 for tag in doc["tags"].split() if
-                    (tag in query.lower() if re.search(r"[\u4e00-\u9fff]", tag) else tag in query_tokens))
+        score = sum(
+            2
+            for tag in doc["tags"].split()
+            if (
+                tag in query.lower()
+                if re.search(r"[\u4e00-\u9fff]", tag)
+                else tag in query_tokens
+            )
+        )
         score += len(query_tokens & haystack)
         if score:
             scored.append((score, doc))
     scored.sort(key=lambda item: (-item[0], item[1]["id"]))
-    return [{"id": doc["id"], "title": ENGLISH[doc["id"]][0] if language == "en" else doc["title"], "source": doc["source"], "text": ENGLISH[doc["id"]][1] if language == "en" else doc["text"], "score": score}
-            for score, doc in scored[:max(1, min(limit, 5))]]
+    return [
+        {
+            "id": doc["id"],
+            "title": ENGLISH[doc["id"]][0] if language == "en" else doc["title"],
+            "source": doc["source"],
+            "text": ENGLISH[doc["id"]][1] if language == "en" else doc["text"],
+            "score": score,
+        }
+        for score, doc in scored[: max(1, min(limit, 5))]
+    ]

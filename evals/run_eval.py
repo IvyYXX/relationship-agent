@@ -1,79 +1,152 @@
-#!/usr/bin/env python3
-"""Evaluate harness invariants separately from response quality.
+"""Offline source-boundary scenarios through the current queue and scoped store.
 
-API mode consumes provider quota. Results always require human review of the
-case-specific rubric; passing structural checks is not a quality certification.
+Live evaluation remains in persona_eval.py with an explicit API call budget.
+Structural success is not a model-quality score.
 """
+
 import argparse
 import json
 import sys
 import tempfile
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from relationship_agent.engine import RelationshipAgent
-from relationship_agent.providers import build_model_client
-from relationship_agent.schemas import validate_stage, ContractError
-from relationship_agent.storage import Store
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from sqlalchemy import select
+from relationship_agent.beta.auth import Auth
+from relationship_agent.beta.config import Settings
+from relationship_agent.beta.database import Database, memories
+from relationship_agent.beta.service import Service
+from relationship_agent.beta.store import ScopedStore
+from relationship_agent.schemas import ContractError, validate_stage
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("mock", "api"), default="mock")
-    parser.add_argument("--model")
-    parser.add_argument("--protocol", choices=("anthropic", "chat-completions"))
-    parser.add_argument("--base-url")
-    parser.add_argument("--api-key-env", default="GLM_API_KEY")
-    parser.add_argument("--limit", type=int, default=8)
     parser.add_argument("--output")
     args = parser.parse_args()
-    cases = json.loads(Path(__file__).with_name("cases.json").read_text())[:max(1, args.limit)]
+    cases = json.loads(Path(__file__).with_name("cases.json").read_text())
     results, reports = [], {}
-    for case in cases:
-        with tempfile.TemporaryDirectory() as root:
-            store = Store(root)
-            client = build_model_client(args.mode, model=args.model, protocol=args.protocol,
-                                        base_url=args.base_url, api_key_env=args.api_key_env)
-            agent = RelationshipAgent(client, store)
-            sid = store.create_session(case["id"], args.mode, case["language"])["id"]
-            try:
-                report = agent.execute(agent.start(sid, case["message"]))
-                reports[case["id"]] = report
+    with tempfile.TemporaryDirectory() as root:
+        settings = Settings(database_url="sqlite:///" + root + "/eval.sqlite")
+        db = Database(settings.database_url)
+        try:
+            auth, service = Auth(db, settings), Service(db, settings)
+            for case in cases:
+                token, _ = auth.login(
+                    case["id"],
+                    "synthetic-evaluation-123",
+                    register=True,
+                    adult=True,
+                    consent=True,
+                )
+                uid = auth.authenticate(token)["user_id"]
+                store = ScopedStore(db, uid)
+                sid = store.create_session(language=case["language"])["id"]
+                # Explicit analysis requests must still defer to the safety gate.
+                message = case["message"] + (
+                    "\nPlease analyze this situation."
+                    if case["language"] == "en"
+                    else "\n请分析这件事。"
+                )
+                rid = service.submit(uid, sid, message)
+                service.execute(service.claim())
+                run = store.run(rid)
+                report = run["result"] or {}
                 checks = {
-                    "evidence_quotes_present_in_input": all(f["quote"] in case["message"] for f in report["evidence"]["facts"]),
-                    "hypotheses_remain_uncertain": all(h["status"] in {"possible","unknown"} for h in report["current_hypotheses"]),
-                    "rehearsal_matches_action": report["dialogue_rehearsal"]["action_id"] == report["actions"]["recommended_id"],
-                    "memory_contains_only_user_text": [m["text"] for m in store.context(sid)] == [case["message"]],
-                    "simulation_layer_present": bool(store.memory(sid, "simulation")),
-                    "trace_contains_all_stages": sum(t["event"] == "stage_completed" for t in store.traces(report["run_id"])) == 4,
+                    "completed": run["status"] == "complete",
+                    "no_implicit_long_term_memory": store.context(sid) == [],
                 }
-                results.append({"id":case["id"], "checks":checks, "structural_pass":all(checks.values()),
-                                "human_review":"pending", "rubric":case["review"], "report":report})
-            except (RuntimeError, ValueError) as exc:
-                results.append({"id":case["id"], "structural_pass":False, "error":str(exc), "human_review":"pending"})
-
-    # Small controlled negative fixture: schema only versus schema + provenance.
-    fake = {"facts":[{"quote":"我们仍然每天聊天"}], "feelings":[], "assumptions":[], "unknowns":[], "questions":[]}
+                if case["id"] == "unsafe_confrontation":
+                    checks["safety_before_model"] = report.get(
+                        "kind"
+                    ) == "safety" and not store.traces(rid)
+                else:
+                    checks.update(
+                        {
+                            "analysis_route": report.get("kind") == "analysis",
+                            "literal_quotes": all(
+                                f["quote"] in message
+                                for f in report.get("evidence", {}).get("facts", [])
+                            ),
+                            "uncertain_hypotheses": bool(
+                                report.get("current_hypotheses")
+                            )
+                            and all(
+                                h["status"] in ("possible", "unknown")
+                                for h in report.get("current_hypotheses", [])
+                            ),
+                            "action_matches_rehearsal": report.get("actions", {}).get(
+                                "recommended_id"
+                            )
+                            == report.get("dialogue_rehearsal", {}).get("action_id"),
+                            "all_stages": sum(
+                                t["event"] == "stage_completed"
+                                for t in store.traces(rid)
+                            )
+                            == 5,
+                        }
+                    )
+                    with db.read() as connection:
+                        layers = set(
+                            connection.execute(
+                                select(memories.c.layer).where(
+                                    memories.c.user_id == uid
+                                )
+                            ).scalars()
+                        )
+                    checks["separate_provenance"] = layers == {
+                        "observation",
+                        "inference",
+                        "simulation",
+                    }
+                    reports[case["id"]] = report
+                results.append(
+                    {
+                        "id": case["id"],
+                        "checks": checks,
+                        "structural_pass": all(checks.values()),
+                        "human_review": "pending",
+                        "rubric": case["review"],
+                    }
+                )
+        finally:
+            db.close()
+    fabricated = {
+        "facts": [{"quote": "我们每天聊天"}],
+        "feelings": [],
+        "assumptions": [],
+        "unknowns": [],
+        "questions": [],
+    }
     rejected = False
     try:
-        validate_stage("extract", fake, {"user_message":"他一直没有联系我"})
+        validate_stage("extract", fabricated, {"user_message": "他一直没有联系我"})
     except ContractError:
         rejected = True
-    comparisons = {"fabricated_quote_fixture":{"with_provenance_validation_rejected":rejected, "without_provenance_validation_would_accept":True}}
-    if args.mode == "mock" and "zh_gender_swap" in reports:
-        comparisons["gender_swap_fixture"] = {
-            "same_action_options":reports["zh_suspicion"]["actions"] == reports["zh_gender_swap"]["actions"],
-            "same_hypotheses":reports["zh_suspicion"]["hypotheses"] == reports["zh_gender_swap"]["hypotheses"],
-            "scope":"Deterministic fixture only; not evidence of model fairness"}
-    output = {"mode":args.mode, "cases":len(results), "structural_passed":sum(r["structural_pass"] for r in results),
-              "quality_status":"NOT_EVALUATED — complete human review before making quality claims",
-              "comparisons":comparisons, "results":results}
+    comparisons = {"fabricated_quote_rejected": rejected}
+    if "zh_suspicion" in reports and "zh_gender_swap" in reports:
+        comparisons["deterministic_gender_fixture"] = all(
+            reports["zh_suspicion"][key] == reports["zh_gender_swap"][key]
+            for key in ("actions", "hypotheses")
+        )
+    output = {
+        "mode": "mock",
+        "cases": len(results),
+        "structural_passed": sum(r["structural_pass"] for r in results),
+        "comparisons": comparisons,
+        "quality_status": "NOT_EVALUATED: human review required",
+        "results": results,
+    }
     if args.output:
         path = Path(args.output)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(output, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-    print(json.dumps({k:v for k,v in output.items() if k!="results"}, ensure_ascii=False, indent=2))
-    return 0 if output["structural_passed"] == output["cases"] else 1
+        path.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n")
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+    return (
+        0
+        if all(comparisons.values()) and all(r["structural_pass"] for r in results)
+        else 1
+    )
 
 
 if __name__ == "__main__":

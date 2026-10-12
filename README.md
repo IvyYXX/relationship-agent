@@ -18,7 +18,7 @@ python3 -m venv .venv
 
 已有本地 QA 账号仅供演示，不用于真实私人内容或公网环境。公网使用独立的 PostgreSQL 数据库，不上传本地 memory 目录。
 
-在 PyCharm 中运行 `web_app.py` 或 `persona_app.py` 均启动新版。旧版本保留在 `legacy_web_app.py`，其数据库不自动迁移到任何新账号。
+在 PyCharm 中运行 `web_app.py` 或 `persona_app.py` 均启动同一个 Persona AI。安装后的 `persona-ai`、`relationship-agent`、`relationship-agent-web` 和 `python -m relationship_agent` 也指向这一服务。旧入口、旧界面与单用户存储实现已移出；原数据库、记录和 `.env` 不会被删除或自动归入新账号。操作与回滚说明见 [迁移记录](docs/migration.md)。
 
 ## 真实模型
 
@@ -59,11 +59,12 @@ python3 -m venv .venv
 
 ## 测试和评测
 
-90项独立本地回归通过；[GitHub CI](https://github.com/y011124/relationship-agent/actions/runs/37314361389)的双Python版本、PostgreSQL、Docker与浏览器检查全部通过。真实模型与真人反馈仍待完成。
+当前本地验证、测试范围与发布门槛见 [verification.md](docs/verification.md)。旧提交的 CI 成功不能代表本次重构通过 CI；真实模型与真人反馈仍待完成。
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 .venv/bin/python evals/persona_eval.py
+.venv/bin/python scripts/verify.py --browser --package
 ```
 
 40个中英文多轮案例，比较有／无人物记忆；默认全部Mock，不花模型额度。真实模型小额联调示例：
@@ -88,7 +89,7 @@ python3 -m venv .venv
 
 提供 Dockerfile、PostgreSQL/Caddy Compose、Render Blueprint、PostgreSQL CI、数据库备份和恢复工具。它们是部署材料，**不等于已经上线**。域名、托管账号、模型配置、备份存储与真实用户反馈仍需实际接通并验收。
 
-不要直接将旧本地 HTTP 服务暴露公网。不要提交 `.env`、私人数据库、备份、聊天记录或报告。部署详见 [deployment.md](docs/deployment.md)。
+开发模式仅允许监听本机；公开服务必须满足生产配置检查。不要提交 `.env`、私人数据库、备份、聊天记录或报告。部署详见 [deployment.md](docs/deployment.md)。
 
 ## 代码地图
 
