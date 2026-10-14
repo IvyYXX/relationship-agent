@@ -5,7 +5,7 @@ export PERSONA_MODE=api
 export RELATIONSHIP_MODEL="${RELATIONSHIP_MODEL:-glm-5.3}"
 export RELATIONSHIP_PROTOCOL="${RELATIONSHIP_PROTOCOL:-chat-completions}"
 export RELATIONSHIP_BASE_URL="${RELATIONSHIP_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}"
-export PERSONA_PROVIDER_LABEL="${PERSONA_PROVIDER_LABEL:-GLM · 智谱}"
+export PERSONA_PROVIDER_LABEL="${PERSONA_PROVIDER_LABEL:-GLM}"
 api_port="${PERSONA_PORT:-8770}"
 export PERSONA_ORIGIN="http://127.0.0.1:$api_port"
 if [[ -z "${PERSONA_API_KEY:-}${GLM_API_KEY:-}" ]]; then

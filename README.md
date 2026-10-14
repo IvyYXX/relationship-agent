@@ -109,4 +109,4 @@ src/relationship_agent/providers.py  多协议模型适配与逐请求计量钩�
 evals/persona_cases.py               40个合成多轮场景
 ```
 
-本项目独立开发，不依赖 ZScience。记忆分层受 Generative Agents 思路启发，没有复现其虚拟小镇。项目和 Character.AI 无关联。
+本项目独立开发。记忆分层受 Generative Agents 思路启发，没有复现其虚拟小镇。
