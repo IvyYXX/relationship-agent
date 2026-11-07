@@ -18,18 +18,19 @@ from .database import (
 
 
 class Missing(ValueError):
+    """记录不存在或不属于当前账号；统一错误避免泄露其他用户记录。"""
+
     pass
 
 
 class Busy(ValueError):
+    """任务执行中或并发限制阻止当前操作。"""
+
     pass
 
 
-def data(row):
-    return dict(row) if row else None
-
-
 def public_profile(value):
+    """筛选并规范化允许的人物字段，拒绝未知字段和超长资料。"""
     allowed = {
         "nickname",
         "aliases",
@@ -52,12 +53,16 @@ def public_profile(value):
 
 
 class ScopedStore:
+    """在所有资源访问中校验 user_id，并实现工作流存储协议。"""
+
     def __init__(self, db, user_id, person_ids=None, worker=None, idempotency_key=None):
+        """绑定账号、选定人物和可选 worker 身份，不自行授予访问权限。"""
         self.db, self.user_id = db, user_id
         self.person_ids = person_ids or []
         self.worker, self.idempotency_key = worker, idempotency_key
 
     def own(self, c, table, record_id):
+        """在给定连接内读取归属于当前账号的记录，否则抛出 Missing。"""
         row = (
             c.execute(
                 select(table).where(
@@ -72,12 +77,14 @@ class ScopedStore:
         return dict(row)
 
     def epoch(self, c):
+        """读取账号的记忆版本；账号已删除时拒绝继续执行。"""
         row = c.execute(select(users.c.epoch).where(users.c.id == self.user_id)).first()
         if not row:
             raise Missing("Account not found")
         return row[0]
 
     def idle(self, c):
+        """确保当前账号没有排队或运行任务，再允许修改记忆。"""
         if c.execute(
             select(runs.c.id).where(
                 runs.c.user_id == self.user_id, runs.c.status.in_(["queued", "running"])
@@ -86,6 +93,7 @@ class ScopedStore:
             raise Busy("请等待当前任务完成再修改记忆 / Wait for your active tasks")
 
     def invalidate(self, c):
+        """增加记忆版本并清除失败任务的旧快照，保留删除依赖。"""
         c.execute(
             update(users)
             .where(users.c.id == self.user_id)
@@ -118,6 +126,7 @@ class ScopedStore:
             )
 
     def people(self):
+        """按创建顺序返回当前账号的人物列表。"""
         with self.db.read() as c:
             return [
                 dict(r)
@@ -129,10 +138,12 @@ class ScopedStore:
             ]
 
     def person(self, pid):
+        """读取单个人物并校验归属。"""
         with self.db.read() as c:
             return self.own(c, people, pid)
 
     def save_person(self, profile, pid=None):
+        """创建或替换人物资料；修改已有资料会使旧上下文失效。"""
         profile = public_profile(profile)
         with self.db.tx() as c:
             self.idle(c)
@@ -162,6 +173,7 @@ class ScopedStore:
 
     def purge_person_context(self, c, pid):
         # Strong deletion: remove conversations that contain this person's input or derived output.
+        """删除包含该人物的会话与派生产物，并使账号旧上下文失效。"""
         affected = {
             r["session_id"]
             for r in c.execute(
@@ -186,6 +198,7 @@ class ScopedStore:
         self.invalidate(c)
 
     def delete_person(self, pid):
+        """在无活跃任务时删除人物及其相关对话、经历。"""
         with self.db.tx() as c:
             self.idle(c)
             self.own(c, people, pid)
@@ -197,6 +210,10 @@ class ScopedStore:
             )
 
     def resolve(self, message, selected=None):
+        """返回 (确定的人物 ID 列表, 待澄清人物列表)。
+
+        只依据显式选择或已登记昵称/别名匹配，不进行性格或身份语义推断。
+        单个明确提及可覆盖旧选择；多人或不明确代词不会自动归档。"""
         all_people = self.people()
         if selected:
             self.person(selected)
@@ -227,6 +244,7 @@ class ScopedStore:
         return matched or ([selected] if selected else []), []
 
     def list_events(self, pid):
+        """读取人物的待确认和已确认事件，不返回已拒绝事件。"""
         with self.db.read() as c:
             self.own(c, people, pid)
             return [
@@ -243,6 +261,7 @@ class ScopedStore:
             ]
 
     def save_event(self, pid, payload, eid=None):
+        """保存用户手动记录或确认/修改候选事件，并使旧模型上下文失效。"""
         text = str(payload.get("text", "")).strip()
         kind = payload.get("kind", "account")
         status = payload.get("status", "confirmed")
@@ -289,6 +308,7 @@ class ScopedStore:
         return eid
 
     def delete_event(self, eid):
+        """删除事件及涉及该人物的对话，避免旧输出重新带回删除内容。"""
         with self.db.tx() as c:
             self.idle(c)
             old = self.own(c, events, eid)
@@ -300,6 +320,7 @@ class ScopedStore:
             )
 
     def create_session(self, title="", mode="mock", language="zh", person_id=None):
+        """创建指定语言的会话并校验可选人物归属；mode 为兼容参数。"""
         if language not in ("zh", "en"):
             raise ValueError("Invalid language")
         with self.db.tx() as c:
@@ -319,10 +340,12 @@ class ScopedStore:
         return self.session(sid)
 
     def session(self, sid):
+        """读取当前账号的单个会话。"""
         with self.db.read() as c:
             return self.own(c, sessions, sid)
 
     def sessions(self):
+        """按创建时间倒序返回当前账号的会话。"""
         with self.db.read() as c:
             return [
                 dict(x)
@@ -334,6 +357,7 @@ class ScopedStore:
             ]
 
     def delete_session(self, sid):
+        """删除会话、执行记录及由该会话产生的人物记忆。"""
         with self.db.tx() as c:
             self.idle(c)
             self.own(c, sessions, sid)
@@ -354,6 +378,7 @@ class ScopedStore:
             self.invalidate(c)
 
     def create_run(self, sid, kind, message, config, state=None):
+        """原子校验幂等键、并发上限和记忆版本，保存待执行任务。"""
         with self.db.tx() as c:
             self.own(c, sessions, sid)
             if self.idempotency_key:
@@ -424,10 +449,12 @@ class ScopedStore:
         return rid
 
     def run(self, rid):
+        """读取当前账号的内部任务记录，包含不可直接公开的冻结上下文。"""
         with self.db.read() as c:
             return self.own(c, runs, rid)
 
     def runs(self, sid):
+        """校验会话归属后按创建顺序读取其中的任务。"""
         with self.db.read() as c:
             self.own(c, sessions, sid)
             return [
@@ -440,6 +467,7 @@ class ScopedStore:
             ]
 
     def valid_job(self, c, rid):
+        """校验任务归属、记忆版本和 worker 租约，拒绝过期执行者写入。"""
         run = self.own(c, runs, rid)
         if run["epoch"] != self.epoch(c):
             raise ValueError("记忆已更新，请重新发送 / Memory changed")
@@ -452,6 +480,7 @@ class ScopedStore:
         return run
 
     def checkpoint(self, rid, state):
+        """在有效租约下保存已完成阶段并续租，支持失败恢复。"""
         with self.db.tx() as c:
             self.valid_job(c, rid)
             c.execute(
@@ -461,6 +490,7 @@ class ScopedStore:
             )
 
     def fail(self, rid, error):
+        """记录脱敏失败信息；不允许旧 worker 覆盖新 worker 的状态。"""
         with self.db.tx() as c:
             run = self.own(c, runs, rid)
             if self.worker and run["worker"] != self.worker:
@@ -472,6 +502,7 @@ class ScopedStore:
             )
 
     def trace(self, rid, event, detail=None):
+        """保存属于该账号任务的执行事件；调用方负责不传入凭据。"""
         with self.db.tx() as c:
             self.own(c, runs, rid)
             c.execute(
@@ -486,6 +517,7 @@ class ScopedStore:
             )
 
     def traces(self, rid):
+        """按时间返回任务执行记录，不代表其内容可直接公开。"""
         with self.db.read() as c:
             self.own(c, runs, rid)
             return [
@@ -498,6 +530,9 @@ class ScopedStore:
             ]
 
     def finish(self, rid, result, records):
+        """原子提交回答、分层工作流记忆及可选的待确认人物陈述。
+
+        候选不是已核实事实。已完成任务直接返回，避免重复生成记忆。"""
         with self.db.tx() as c:
             run = self.valid_job(c, rid)
             if run["status"] == "complete":
@@ -523,6 +558,7 @@ class ScopedStore:
             if (
                 len(run["person_ids"] or []) == 1
                 and result.get("kind") in ("chat", "analysis", "feedback")
+                and not result.get("dialogue_rehearsal")
                 and not any(
                     x in run["input"]
                     for x in ("？", "?", "演练", "假设", "如果", "rehearse", "what if")
@@ -558,6 +594,9 @@ class ScopedStore:
             )
 
     def context(self, sid, max_chars=6000, query=""):
+        """按账号/人物范围检索资料和已确认事件，受字符预算限制。
+
+        先提供资料，再按词项相关度与时间选择事件；不是向量检索。"""
         self.session(sid)
         selected = []
         used = 0
@@ -614,6 +653,9 @@ class ScopedStore:
         return selected
 
     def conversation(self, sid, budget=8500):
+        """返回同一人物范围、同一记忆版本的最近十二轮有限历史。
+
+        保留用户原话；生成的报告和模拟内容不作为真实对话证据回填。"""
         rows = self.runs(sid)
         with self.db.read() as c:
             epoch = self.epoch(c)
@@ -627,14 +669,20 @@ class ScopedStore:
             ):
                 continue
             result = r["result"] or {}
-            # Generated analysis/rehearsal is excluded from chat history to avoid fact contamination.
-            if result.get("kind") not in ("chat", "knowledge", "evidence"):
+            # Keep what the user actually said across workflow changes. Generated
+            # reports and simulations remain excluded; neither becomes real evidence.
+            if result.get("kind") not in (
+                "chat",
+                "knowledge",
+                "evidence",
+                "analysis",
+                "feedback",
+            ):
                 continue
-            reply = result.get("reply") or result.get("answer", "")
-            pair = [
-                {"role": "user", "content": r["input"]},
-                {"role": "assistant", "content": reply},
-            ]
+            pair = [{"role": "user", "content": r["input"]}]
+            if result.get("kind") in ("chat", "knowledge", "evidence"):
+                reply = result.get("reply") or result.get("answer", "")
+                pair.append({"role": "assistant", "content": reply})
             cost = len(json.dumps(pair, ensure_ascii=False))
             if used + cost > budget:
                 break
@@ -645,6 +693,7 @@ class ScopedStore:
         return [m for pair in reversed(pairs) for m in pair]
 
     def latest_report(self, sid):
+        """返回同人物范围与记忆版本下最近完成的报告或报告修正。"""
         with self.db.read() as c:
             epoch = self.epoch(c)
         for r in reversed(self.runs(sid)):
@@ -658,11 +707,13 @@ class ScopedStore:
         return None
 
     def delete_account(self):
+        """无活跃任务时删除当前账号，依靠外键级联清理所属数据。"""
         with self.db.tx() as c:
             self.idle(c)
             c.execute(delete(users).where(users.c.id == self.user_id))
 
     def export(self):
+        """导出当前账号业务数据，不包含密码、令牌或供应商密钥。"""
         with self.db.read() as c:
             return {
                 t.name: [

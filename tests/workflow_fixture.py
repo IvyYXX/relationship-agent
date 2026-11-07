@@ -62,7 +62,7 @@ class Driver:
         self.store = fixture.store
         self.service = Service(fixture.db, fixture.settings, lambda: client)
 
-    def start(self, sid, message, kind="analysis"):
+    def start(self, sid, message, kind="rehearsal"):
         if kind == "auto":
             return self.service.submit(self.fixture.uid, sid, message)
         previous = self.store.latest_report(sid)

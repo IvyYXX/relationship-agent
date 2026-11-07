@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    """运行离线验收并保存逐项日志；仅显式选项启动浏览器或构建。"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output-dir",
@@ -34,6 +35,8 @@ def main():
     # Never let this convenience runner clear a caller's configured Postgres database.
     env.pop("PERSONA_TEST_DATABASE_URL", None)
     checks = [
+        ("lint", ["-m", "ruff", "check", "."]),
+        ("format", ["-m", "ruff", "format", "--check", "."]),
         (
             "regression",
             ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
@@ -83,7 +86,7 @@ def main():
                 "seconds": round(time.monotonic() - started, 3),
             }
         )
-        print(f'{name}: {"PASS" if code == 0 else "FAIL"}', flush=True)
+        print(f"{name}: {'PASS' if code == 0 else 'FAIL'}", flush=True)
     summary = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "results": results,

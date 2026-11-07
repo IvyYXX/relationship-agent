@@ -21,14 +21,14 @@ class HarnessTests(unittest.TestCase):
         for message, intent in [
             ("我很焦虑，只想聊聊，不想分析", "chat"),
             ("什么是依恋？", "knowledge"),
-            ("他一直没有联系我，请帮我分析", "analysis"),
-            ("后来他说他有新伴侣了。", "feedback"),
+            ("他一直没有联系我，请详细分析", "analysis"),
+            ("后来他说他有新伴侣了，请更新判断。", "feedback"),
         ]:
             result = self.agent.execute(self.agent.start(self.sid, message, "auto"))
             self.assertEqual(result["kind"], intent)
             self.assertEqual(result["routing"]["intent"], intent)
-        self.assertEqual(len(self.store.conversation(self.sid)), 4)
-        # Analysis and generated rehearsal are deliberately excluded from chat context.
+        self.assertEqual(len(self.store.conversation(self.sid)), 6)
+        # User reports survive workflow changes; generated reports/rehearsals stay excluded.
         self.assertEqual(self.store.latest_report(self.sid)["kind"], "feedback")
 
     def test_route_contract_rejects_bad_intent_and_unfounded_feedback(self):
@@ -54,36 +54,56 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             agent.execute(rid)
         self.assertEqual(agent.execute(rid)["kind"], "knowledge")
-        self.assertEqual(client.calls.count("route"), 1)
+        self.assertEqual(client.calls.count("respond"), 1)
 
-    def test_chat_repair_prevents_identical_provider_reply(self):
+    def test_duplicate_reply_repair_preserves_the_new_request(self):
         class Repeater(MockModelClient):
+            calls = []
+
             def complete_json(self, stage, payload, schema=None):
+                self.calls.append(stage)
+                if stage == "respond":
+                    return {
+                        "intent": "chat",
+                        "reason": "conversation",
+                        "reply": "先确认明天的截止时间。",
+                    }
                 if stage == "chat":
-                    return {"reply": "同一句回复"}
+                    self.repair = payload
+                    return {
+                        "reply": "可以发：我今天先完成甲任务，乙任务能否调整到明天下午？"
+                    }
                 return super().complete_json(stage, payload, schema)
 
         client = Repeater()
         agent = self.fixture.driver(client)
-        sid = self.store.create_session("repeat", "mock")["id"]
-        first = agent.execute(agent.start(sid, "我很焦虑", "auto"))
-        second = agent.execute(agent.start(sid, "主要是工作让我不安", "auto"))
-        self.assertNotEqual(first["reply"], "同一句回复")
-        self.assertNotEqual(second["reply"], first["reply"])
-        self.assertIn("不安", second["reply"])
+        agent.execute(agent.start(self.sid, "任务太多了怎么办", "auto"))
+        result = agent.execute(
+            agent.start(self.sid, "帮我写一句确认优先级的话", "auto")
+        )
+        self.assertIn("可以发", result["reply"])
+        self.assertEqual(client.calls, ["respond", "respond", "chat"])
+        self.assertIn("确认优先级", client.repair["user_message"])
 
-    def test_chat_repair_adds_empathy_when_provider_is_too_cold(self):
-        class Cold(MockModelClient):
+    def test_persistent_duplicate_fails_instead_of_fabricating_a_generic_answer(self):
+        class Repeater(MockModelClient):
             def complete_json(self, stage, payload, schema=None):
+                if stage == "respond":
+                    return {
+                        "intent": "chat",
+                        "reason": "conversation",
+                        "reply": "同一句回复",
+                    }
                 if stage == "chat":
-                    return {"reply": "请描述更多。"}
+                    return {"reply": "同一句回复"}
                 return super().complete_json(stage, payload, schema)
 
-        agent = self.fixture.driver(Cold())
-        sid = self.store.create_session("empathy", "mock")["id"]
-        result = agent.execute(agent.start(sid, "我很焦虑", "auto"))
-        self.assertIn("听起来", result["reply"])
-        self.assertIn("焦虑", result["reply"])
+        agent = self.fixture.driver(Repeater())
+        agent.execute(agent.start(self.sid, "今天工作很忙", "auto"))
+        rid = agent.start(self.sid, "帮我写一句确认优先级的话", "auto")
+        with self.assertRaisesRegex(RuntimeError, "repeated"):
+            agent.execute(rid)
+        self.assertEqual(self.store.run(rid)["status"], "failed")
 
     def test_knowledge_retrieval_and_memory_boundary(self):
         self.analyze()

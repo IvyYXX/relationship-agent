@@ -10,20 +10,21 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from .demo import MockModelClient
-from .schemas import SCHEMAS, INSTRUCTIONS, validate_stage
+from .schemas import SCHEMAS, validate_stage
+from .prompts import INSTRUCTIONS
+from .http import NoRedirect
 
 
 class ModelError(RuntimeError):
+    """允许向用户显示的脱敏模型调用错误。"""
+
     pass
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None  # Never forward credentials to a redirected host.
 
 
 @dataclass
 class APIClient:
+    """适配两种 HTTP 协议，限制请求次数并校验结构化输出。"""
+
     api_key: str = field(repr=False)
     model: str = "glm-5.3"
     base_url: str = "https://open.bigmodel.cn/api/anthropic"
@@ -37,6 +38,7 @@ class APIClient:
     after_request: object = field(default=None, repr=False)
 
     def __post_init__(self):
+        """验证目标地址、协议、模型与调用限额，阻止含凭据的 URL。"""
         parsed = urlsplit(self.base_url)
         if (
             (
@@ -64,6 +66,7 @@ class APIClient:
 
     @property
     def endpoint(self):
+        """按协议规范化消息端点，避免重复添加路径。"""
         base = self.base_url.rstrip("/")
         if self.protocol == "chat-completions":
             return (
@@ -78,9 +81,14 @@ class APIClient:
         )
 
     def _request(self, system, user, stage):
+        """发送单次逻辑请求；可重试错误最多重试一次，每次都经过计费钩子。"""
         body = {
             "model": self.model,
-            "max_tokens": 256 if stage == "route" else 768 if stage == "chat" else 4096,
+            "max_tokens": 256
+            if stage == "route"
+            else 1024
+            if stage in {"chat", "respond"}
+            else 4096,
             "messages": [{"role": "user", "content": user}],
         }
         if self.model.lower() == "glm-5.3":
@@ -156,6 +164,9 @@ class APIClient:
                 ) from None
 
     def complete_json(self, stage, payload, schema=None):
+        """组合阶段提示词，最多修复一次无效 JSON/证据结构后返回结果。
+
+        传入的 schema 参数保留接口兼容；实际校验以 SCHEMAS 的阶段定义为准。"""
         self.last_usage = {}
         system = (
             "You help users reason about relationship uncertainty and practise communication. "
@@ -202,6 +213,7 @@ def build_model_client(
     protocol=None,
     api_key=None,
 ):
+    """创建离线或 API 客户端，从显式参数/环境读取配置；不会发起请求。"""
     if mode == "mock":
         return MockModelClient()
     if mode != "api":

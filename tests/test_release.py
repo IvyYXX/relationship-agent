@@ -112,8 +112,8 @@ class ReleaseTests(unittest.TestCase):
         for message, kind in [
             ("我很焦虑，只想聊聊", "chat"),
             ("什么是依恋？", "knowledge"),
-            ("他一直没有联系我，请分析", "analysis"),
-            ("后来他说他有新伴侣了。", "feedback"),
+            ("他一直没有联系我，请详细分析", "analysis"),
+            ("后来他说他有新伴侣了，请更新判断。", "feedback"),
         ]:
             self.assertEqual(
                 self.wait(self.submit(message, sid))["result"]["kind"], kind
@@ -130,7 +130,7 @@ class ReleaseTests(unittest.TestCase):
         proposal = created["memory_proposal"]
         before = self.wait(self.submit("小林之前做过什么？", pid=pid))
         self.assertNotIn("你之前确认记录过", before["result"]["reply"])
-        path = f'/api/people/{pid}/events/{proposal["id"]}'
+        path = f"/api/people/{pid}/events/{proposal['id']}"
         self.assertEqual(
             self.client.patch(path, json={"text": proposal["text"]}).status_code, 200
         )
@@ -200,10 +200,10 @@ class ReleaseTests(unittest.TestCase):
             )
             self.wait(rid)
             self.assertEqual(
-                len(calls), 3
-            )  # Failed route, resumed route, successful chat.
+                len(calls), 2
+            )  # Failed combined call, resumed combined answer.
             with self.app.state.db.read() as connection:
-                self.assertEqual(len(connection.execute(select(attempts)).all()), 3)
+                self.assertEqual(len(connection.execute(select(attempts)).all()), 2)
 
     def test_blank_and_oversized_input_rejected(self):
         sid = self.session()

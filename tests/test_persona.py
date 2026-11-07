@@ -272,7 +272,7 @@ class PersonaTests(unittest.TestCase):
         sid = self.session()
         self.assertEqual(len(store.context(sid)), 1)
         r = self.a.patch(
-            f'/api/people/{pid}/events/{proposal["id"]}',
+            f"/api/people/{pid}/events/{proposal['id']}",
             json={"text": proposal["text"]},
         )
         self.assertEqual(r.status_code, 200)
@@ -468,19 +468,19 @@ class PersonaTests(unittest.TestCase):
         class FailOnce(PersonaDemo):
             def complete_json(self, stage, payload, schema=None):
                 calls.append(stage)
-                if stage == "chat" and calls.count("chat") == 1:
+                if stage == "knowledge" and calls.count("knowledge") == 1:
                     raise ModelError("Injected failure")
                 return super().complete_json(stage, payload, schema)
 
         self.service.client_factory = FailOnce
-        rid = self.submit("我有点难过")
+        rid = self.submit("解释依恋理论")
         job = self.service.claim()
         self.service.execute(job)
         self.assertEqual(self.a.get("/api/runs/" + rid).json()["status"], "failed")
         self.a.post("/api/runs/" + rid + "/resume", json={})
         self.execute(rid)
-        self.assertEqual(calls.count("route"), 1)
-        self.assertEqual(calls.count("chat"), 2)
+        self.assertEqual(calls.count("respond"), 1)
+        self.assertEqual(calls.count("knowledge"), 2)
 
     def test_resume_rejected_after_memory_revision(self):
         p = self.person()

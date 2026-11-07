@@ -1,3 +1,5 @@
+"""使用临时数据库验证加密备份、反馈授权和只读 MCP 人物隔离。"""
+
 import tempfile
 import unittest
 import asyncio

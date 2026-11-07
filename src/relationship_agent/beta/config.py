@@ -1,3 +1,5 @@
+"""环境配置和生产启动约束；读取配置不会调用模型。"""
+
 from dataclasses import dataclass
 import os
 import math
@@ -6,6 +8,8 @@ from urllib.parse import urlsplit
 
 @dataclass
 class Settings:
+    """应用配置与预算；模型凭据通过环境变量单独读取。"""
+
     database_url: str = "sqlite:///memory/persona.sqlite3"
     origin: str = "http://127.0.0.1:8770"
     production: bool = False
@@ -23,6 +27,7 @@ class Settings:
 
     @classmethod
     def env(cls):
+        """从进程环境构建配置；调用者随后必须执行 validate。"""
         return cls(
             database_url=os.getenv("DATABASE_URL", cls.database_url),
             origin=os.getenv("PERSONA_ORIGIN", cls.origin).rstrip("/"),
@@ -45,6 +50,7 @@ class Settings:
         )
 
     def validate(self):
+        """拒绝非法来源、预算和不完整的生产配置；不会联系外部服务。"""
         p = urlsplit(self.origin)
         if (
             p.scheme not in ("http", "https")

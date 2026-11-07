@@ -4,87 +4,235 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#6850cb" />
-    <title>Persona AI · 记得你在意的人和事</title>
+    <title>Persona AI · Remember. Relate.</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/app.js" defer></script>
   </head>
   <body>
+    <!-- Public landing and authentication; examples never become user memory. -->
     <div id="auth-screen" class="auth-screen">
-      <section class="auth-story">
-        <div class="brand">
-          <span class="monogram">P</span><span>Persona <b>AI</b></span>
+      <div class="auth-hero">
+        <div class="auth-atmosphere" aria-hidden="true">
+          <div class="light-ribbon ribbon-blue"></div>
+          <div class="light-ribbon ribbon-violet"></div>
+          <div class="light-ribbon ribbon-pearl"></div>
         </div>
-        <p class="eyebrow">A LITTLE MORE UNDERSTOOD.</p>
-        <h1 data-i18n="welcome">记得你在意的<br />人和事。</h1>
-        <p data-i18n="welcomeSub">
-          把相处的片段慢慢说给我听。一起理解感受，理清关系，找到自己的表达。
-        </p>
-        <div class="orb orb-one"></div>
-        <div class="orb orb-two"></div>
-      </section>
-      <section class="auth-card">
-        <button id="auth-language" class="text-button language-switch">
-          English
-        </button>
-        <p class="eyebrow">PERSONA AI · INVITE BETA</p>
-        <h2 id="auth-title">欢迎回来</h2>
-        <form id="auth-form">
-          <label
-            ><span data-i18n="username">用户名</span
-            ><input
-              id="username"
-              autocomplete="username"
-              pattern="[a-zA-Z0-9_\-]{3,40}"
-              minlength="3"
-              maxlength="40"
-              required
-            /><small data-i18n="usernameHint"
-              >3–40 位英文字母、数字、下划线</small
-            ></label
-          ><label
-            ><span data-i18n="password">密码</span
-            ><input
-              id="password"
-              type="password"
-              autocomplete="current-password"
-              minlength="12"
-              maxlength="128"
-              required
-            /><small data-i18n="passwordHint">至少 12 位</small></label
-          >
-          <div id="register-fields" hidden>
-            <label id="invite-field"
-              ><span data-i18n="invite">邀请码</span
-              ><input id="invite" autocomplete="off" maxlength="200" /></label
-            ><label class="check"
-              ><input id="adult" type="checkbox" /><span data-i18n="adult"
-                >我已年满 18 周岁</span
-              ></label
-            ><label class="check"
-              ><input id="consent" type="checkbox" /><span data-i18n="consent"
-                >我已阅读数据说明，并同意保存会话和使用模型处理消息。</span
-              ></label
+        <section class="auth-story">
+          <div class="brand">
+            <span class="monogram">P</span><span>Persona <b>AI</b></span>
+          </div>
+          <div class="auth-headline">
+            <h1 data-i18n="welcome">Remember.<br />Relate.</h1>
+            <p data-i18n="welcomeSub">人物 · 经历 · 对话</p>
+            <button
+              class="primary landing-start"
+              data-start
+              data-i18n="startConversation"
+            >
+              开始对话
+            </button>
+            <a class="discover-link" href="#landing-people"
+              ><span data-i18n="discover">向下探索</span
+              ><span aria-hidden="true">↓</span></a
             >
           </div>
-          <button
-            type="button"
-            id="auth-privacy"
-            class="text-button"
-            data-i18n="privacy"
+        </section>
+        <section
+          class="auth-card"
+          id="landing-login"
+          aria-labelledby="auth-title"
+        >
+          <button id="auth-language" class="text-button language-switch">
+            English
+          </button>
+          <p class="eyebrow">PERSONA AI</p>
+          <h2 id="auth-title">Welcome back.</h2>
+          <form id="auth-form">
+            <label
+              ><span data-i18n="username">用户名</span
+              ><input
+                id="username"
+                autocomplete="username"
+                pattern="[a-zA-Z0-9_\-]{3,40}"
+                minlength="3"
+                maxlength="40"
+                required
+              /><small data-i18n="usernameHint"
+                >3–40 位英文字母、数字、下划线</small
+              ></label
+            ><label
+              ><span data-i18n="password">密码</span
+              ><input
+                id="password"
+                type="password"
+                autocomplete="current-password"
+                minlength="12"
+                maxlength="128"
+                required
+              /><small data-i18n="passwordHint">至少 12 位</small></label
+            >
+            <div id="register-fields" hidden>
+              <label id="invite-field"
+                ><span data-i18n="invite">邀请码</span
+                ><input id="invite" autocomplete="off" maxlength="200" /></label
+              ><label class="check"
+                ><input id="adult" type="checkbox" /><span data-i18n="adult"
+                  >我已年满 18 周岁</span
+                ></label
+              ><label class="check"
+                ><input id="consent" type="checkbox" /><span data-i18n="consent"
+                  >我已阅读数据说明，并同意保存会话和使用模型处理消息。</span
+                ></label
+              >
+            </div>
+            <button
+              type="button"
+              id="auth-privacy"
+              class="text-button"
+              data-i18n="privacy"
+            >
+              数据与隐私说明
+            </button>
+            <p id="auth-error" class="error" role="alert"></p>
+            <button class="primary wide" id="auth-submit" type="submit">
+              登录
+            </button>
+          </form>
+          <button id="auth-toggle" class="text-button wide">
+            第一次来？创建账号
+          </button>
+          <p id="auth-mode" class="notice"></p>
+        </section>
+      </div>
+      <main class="landing-features" aria-label="Persona AI">
+        <section
+          class="feature-section"
+          id="landing-people"
+          aria-labelledby="people-heading"
+        >
+          <div class="feature-copy" data-reveal>
+            <p class="eyebrow">01 / PEOPLE</p>
+            <h2 id="people-heading">People.</h2>
+            <h3 data-i18n="peopleHeadline">每个人，单独记得。</h3>
+            <p data-i18n="peopleDescription">
+              把人物、关系和相处经历放在一起。下次聊起，从已有的了解继续。
+            </p>
+          </div>
+          <div
+            class="feature-visual people-preview"
+            aria-label="人物示例"
+            data-i18n-label="peopleExample"
           >
-            数据与隐私说明
-          </button>
-          <p id="auth-error" class="error" role="alert"></p>
-          <button class="primary wide" id="auth-submit" type="submit">
-            登录
-          </button>
-        </form>
-        <button id="auth-toggle" class="text-button wide">
-          第一次来？创建账号
-        </button>
-        <p id="auth-mode" class="notice"></p>
-      </section>
+            <p class="preview-label" data-reveal data-i18n="illustration">
+              功能示意 · 虚构内容
+            </p>
+            <article class="person-preview" data-reveal>
+              <span class="preview-avatar">J</span>
+              <div>
+                <h4 data-i18n="samplePersonOne">Jamie · 约会对象</h4>
+                <p data-i18n="samplePersonOneNote">喜欢摄影，周末常去散步。</p>
+              </div>
+              <span class="preview-dot" aria-hidden="true"></span>
+            </article>
+            <article class="person-preview" data-reveal>
+              <span class="preview-avatar second-avatar">A</span>
+              <div>
+                <h4 data-i18n="samplePersonTwo">Alex · 朋友</h4>
+                <p data-i18n="samplePersonTwoNote">
+                  上次见面，聊起了一份新工作。
+                </p>
+              </div>
+              <span class="preview-dot" aria-hidden="true"></span>
+            </article>
+            <p class="visual-caption" data-reveal data-i18n="peopleCaption">
+              不同的人，各自的故事。
+            </p>
+          </div>
+        </section>
+        <section
+          class="feature-section moments-section"
+          aria-labelledby="moments-heading"
+        >
+          <div class="feature-copy" data-reveal>
+            <p class="eyebrow">02 / MOMENTS</p>
+            <h2 id="moments-heading">Moments.</h2>
+            <h3 data-i18n="momentsHeadline">让片段，有迹可循。</h3>
+            <p data-i18n="momentsDescription">
+              由你确认哪些经历值得记住。信息有变化，随时修改或删除。
+            </p>
+          </div>
+          <div class="feature-visual timeline-preview">
+            <p class="preview-label" data-reveal data-i18n="illustration">
+              功能示意 · 虚构内容
+            </p>
+            <div class="timeline-item" data-reveal>
+              <span class="timeline-dot" aria-hidden="true"></span>
+              <p class="eyebrow" data-i18n="momentOneDate">第一次见面</p>
+              <h4 data-i18n="momentOne">聊了很久，发现都喜欢摄影。</h4>
+              <span class="memory-chip" data-i18n="confirmedExample"
+                >已确认的经历</span
+              >
+            </div>
+            <div class="timeline-item" data-reveal>
+              <span class="timeline-dot" aria-hidden="true"></span>
+              <p class="eyebrow" data-i18n="momentTwoDate">最近一次对话</p>
+              <h4 data-i18n="momentTwo">他说这周工作忙，周末再约。</h4>
+              <p data-i18n="momentsCaption">记下他说过的话，不把猜测当事实。</p>
+            </div>
+          </div>
+        </section>
+        <section class="feature-section" aria-labelledby="words-heading">
+          <div class="feature-copy" data-reveal>
+            <p class="eyebrow">03 / WORDS</p>
+            <h2 id="words-heading">Words.</h2>
+            <h3 data-i18n="wordsHeadline">找到，你的表达。</h3>
+            <p data-i18n="wordsDescription">
+              想倾诉，想理解一个举动，或只是想一句怎么回。从你的问题开始。
+            </p>
+          </div>
+          <div class="feature-visual conversation-preview">
+            <p class="preview-label" data-reveal data-i18n="illustration">
+              功能示意 · 虚构内容
+            </p>
+            <div class="preview-bubble user-preview" data-reveal>
+              <p data-i18n="sampleQuestion">
+                我想约他见面，但不想显得太着急。怎么说？
+              </p>
+            </div>
+            <div class="preview-bubble assistant-preview" data-reveal>
+              <span class="eyebrow">PERSONA AI</span>
+              <p data-i18n="sampleAnswer">
+                可以轻松一点：「这周末有空吗？想约你喝杯咖啡。」表达想见面的心意，也给对方选择的空间。
+              </p>
+            </div>
+            <p class="visual-caption" data-reveal data-i18n="wordsCaption">
+              建议供你参考，决定留给你。
+            </p>
+          </div>
+        </section>
+        <section class="landing-finale" aria-labelledby="finale-heading">
+          <div data-reveal>
+            <p class="eyebrow">PERSONA AI</p>
+            <h2 id="finale-heading">Your words.<br />Your way.</h2>
+            <button
+              class="primary landing-start"
+              data-start
+              data-i18n="startConversation"
+            >
+              开始对话
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer class="landing-footer">
+        <span>Persona AI</span
+        ><span data-i18n="footerNote">人物 · 经历 · 对话</span
+        ><a href="#landing-login" data-start data-i18n="backToLogin"
+          >登录 / 创建账号</a
+        >
+      </footer>
     </div>
+    <!-- Authenticated workspace shares one composer for all request types. -->
     <div id="workspace" class="workspace" hidden>
       <aside id="sidebar">
         <a class="brand" href="/"
@@ -142,7 +290,7 @@
             <p class="eyebrow">YOUR PEOPLE. YOUR STORIES.</p>
             <h1 data-i18n="emptyTitle">今天，想聊聊谁？</h1>
             <p data-i18n="emptySub">
-              可以聊一个在意的人，也可以先说说你自己的感受。
+              聊聊发生的事、一起想怎么回复，也可以先说说你的感受。
             </p>
             <div class="suggestions">
               <button data-prompt="listen" data-i18n="suggestListen">
@@ -151,7 +299,7 @@
                 data-prompt="relationship"
                 data-i18n="suggestRelationship"
               >
-                理清一段关系</button
+                帮我想一句回复</button
               ><button id="empty-add" data-i18n="suggestPerson">
                 记住一个重要的人
               </button>

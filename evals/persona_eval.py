@@ -18,6 +18,7 @@ from relationship_agent.beta.ops import stats
 
 
 def main():
+    """对有/无人物记忆执行配对案例；真实调用必须显式启用并限制次数。"""
     from dotenv import load_dotenv
 
     load_dotenv()

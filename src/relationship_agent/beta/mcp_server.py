@@ -11,6 +11,7 @@ from .store import ScopedStore
 
 
 def build_server(database_url, username, person_id):
+    """验证用户和人物归属后创建只读 MCP；仅供本地可信 Host 使用。"""
     from mcp.server.fastmcp import FastMCP
     from mcp.types import ToolAnnotations
 
@@ -61,6 +62,7 @@ def build_server(database_url, username, person_id):
 
 
 def main():
+    """读取操作者指定的账号和人物，以 stdio 提供只读工具。"""
     from dotenv import load_dotenv
 
     load_dotenv()

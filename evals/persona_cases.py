@@ -145,6 +145,7 @@ SCENARIOS = [
 
 
 def cases():
+    """展开双语和性别变体的合成多轮案例，供同一评测入口复用。"""
     return [
         {
             "id": name + "_" + language,

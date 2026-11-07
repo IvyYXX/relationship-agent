@@ -6,12 +6,29 @@ from dataclasses import dataclass
 
 @dataclass
 class MockModelClient:
+    """可重复的双语样例客户端；只验证流程，不衡量真实模型能力。"""
+
     mode: str = "mock"
     model: str = "demo-rules-v2"
     protocol: str = "mock"
     base_url: str = ""
 
     def complete_json(self, stage, payload, schema=None):
+        """按阶段返回固定或有限规则生成的合成结果，不进行网络调用。"""
+        if stage == "respond":
+            from .routing import demo_route
+
+            route = demo_route(
+                payload["user_message"], payload.get("has_report", False)
+            )
+            # Call the base fixture directly so instrumentation counts actual model
+            # stages, not the implementation details of this offline fixture.
+            reply = (
+                MockModelClient.complete_json(self, "chat", payload)["reply"]
+                if route["intent"] == "chat"
+                else ""
+            )
+            return {**route, "reply": reply}
         if stage == "route":
             from .routing import demo_route
 

@@ -21,6 +21,7 @@ from relationship_agent.schemas import ContractError, validate_stage
 
 
 def main():
+    """通过当前服务验证离线结构与来源边界，不把成功率当作回答质量。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -44,9 +45,9 @@ def main():
                 sid = store.create_session(language=case["language"])["id"]
                 # Explicit analysis requests must still defer to the safety gate.
                 message = case["message"] + (
-                    "\nPlease analyze this situation."
+                    "\nPlease analyze this situation and rehearse the recommended conversation."
                     if case["language"] == "en"
-                    else "\n请分析这件事。"
+                    else "\n请分析这件事，并演练建议的沟通。"
                 )
                 rid = service.submit(uid, sid, message)
                 service.execute(service.claim())

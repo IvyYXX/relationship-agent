@@ -24,6 +24,7 @@ from .auth import password_hash
 
 
 def backup(db, path, key):
+    """创建不含登录令牌的加密快照，使用排他创建避免覆盖已有备份。"""
     tables = [t for t in meta.sorted_tables if t not in (tokens, versions, locks)]
     with db.tx() as c:
         payload = {
@@ -44,6 +45,7 @@ def backup(db, path, key):
 
 
 def restore(db, path, key):
+    """解密后仅恢复到空数据库，撤销令牌并将活跃任务标为失败。"""
     payload = json.loads(Fernet(key).decrypt(Path(path).read_bytes()))
     if payload["version"] != 1:
         raise ValueError("Unsupported backup schema")
@@ -68,6 +70,7 @@ def restore(db, path, key):
 
 
 def stats(db):
+    """汇总任务、反馈和估算费用，不返回对话内容；缺失费用不当作零。"""
     with db.read() as c:
         jobs = [
             dict(r)
@@ -115,6 +118,7 @@ def stats(db):
 
 
 def review(db, fid):
+    """仅在用户明确授权时返回对应反馈关联的输入与结果。"""
     with db.read() as c:
         f = c.execute(select(feedback).where(feedback.c.id == fid)).mappings().first()
         if not f or not f["consent"]:
@@ -132,6 +136,7 @@ def review(db, fid):
 
 
 def main():
+    """运行显式选择的本地运维命令；操作者自行验证账号和目标数据库。"""
     from dotenv import load_dotenv
 
     load_dotenv()

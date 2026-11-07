@@ -11,10 +11,13 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode, urlsplit
 
+from .http import NoRedirect
+
 NAMES = ("Google Scholar", "Semantic Scholar", "OpenAlex")
 
 
 def safe_url(value):
+    """保留带主机名且不含账号密码的 HTTPS 链接，否则返回空字符串。"""
     if not isinstance(value, str):
         return ""
     try:
@@ -28,12 +31,8 @@ def safe_url(value):
         return ""
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def get_json(url, headers):
+    """从固定供应商端点读取最多 2 MB JSON，拒绝重定向并设置超时。"""
     req = urllib.request.Request(
         url, headers={"User-Agent": "ylune-academic/1.0", **headers}
     )
@@ -45,6 +44,7 @@ def get_json(url, headers):
 
 
 def abstract_text(index):
+    """从 OpenAlex 倒排摘要重建前 300 个词位，忽略异常位置。"""
     if not isinstance(index, dict):
         return ""
     words = {}
@@ -58,7 +58,10 @@ def abstract_text(index):
 
 
 class AcademicSearch:
+    """并行查询三个学术来源，规范化、去重并缓存有限结果。"""
+
     def __init__(self, transport=None):
+        """读取独立搜索凭据并注入可替换 transport；构造时不联网。"""
         self.keys = {
             name: os.getenv(env, "")
             for name, env in [
@@ -71,6 +74,7 @@ class AcademicSearch:
         self.cache = {}
 
     def configure(self, values):
+        """更新非空搜索凭据并清空旧缓存；不公开实际密钥。"""
         if not isinstance(values, dict) or set(values) - set(self.keys):
             raise ValueError("Invalid academic settings")
         if any(not isinstance(v, str) or len(v) > 2000 for v in values.values()):
@@ -81,9 +85,11 @@ class AcademicSearch:
         self.cache.clear()
 
     def public_config(self):
+        """只返回各服务是否已配置凭据的布尔值。"""
         return {name: bool(key) for name, key in self.keys.items()}
 
     def _provider(self, name, query):
+        """读取单个来源并规范化最多三条记录；失败转为可显示状态。"""
         if name == "Google Scholar" and not self.keys["serpapi"]:
             return [], {"provider": name, "status": "not_configured", "count": 0}
         try:
@@ -162,9 +168,10 @@ class AcademicSearch:
                         or item.get("doi")
                         or item.get("id")
                     )
-                    year, doi = item.get("publication_year"), str(
-                        item.get("doi") or ""
-                    ).removeprefix("https://doi.org/")
+                    year, doi = (
+                        item.get("publication_year"),
+                        str(item.get("doi") or "").removeprefix("https://doi.org/"),
+                    )
                     authors = [
                         (x.get("author") or {}).get("display_name", "")
                         for x in item.get("authorships", [])
@@ -192,7 +199,9 @@ class AcademicSearch:
             status = (
                 "rate_limited"
                 if exc.code == 429
-                else "auth_required" if exc.code in (401, 403) else "unavailable"
+                else "auth_required"
+                if exc.code in (401, 403)
+                else "unavailable"
             )
             exc.close()
         except (TimeoutError, OSError):
@@ -202,6 +211,7 @@ class AcademicSearch:
         return [], {"provider": name, "status": status, "count": 0}
 
     def search(self, query, enabled=True):
+        """验证查询，聚合至多六篇记录，并缓存十五分钟内的成功响应。"""
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 300:
             raise ValueError("Search query must contain 1-300 characters")
         query = query.strip()

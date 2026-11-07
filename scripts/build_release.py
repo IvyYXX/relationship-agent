@@ -13,6 +13,7 @@ RETIRED_MODULES = ("cli", "server", "storage", "mcp_server", "extractor")
 
 
 def verify_wheel(path):
+    """检查静态资源、入口和禁止打包的私有/退役文件，失败抛出异常。"""
     with ZipFile(path) as wheel:
         names = set(wheel.namelist())
         forbidden = {"relationship_agent/" + name + ".py" for name in RETIRED_MODULES}
@@ -47,6 +48,7 @@ def verify_wheel(path):
 
 
 def main():
+    """从源码隔离副本构建 wheel，检查通过后才复制到输出目录。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=Path("dist"))
     args = parser.parse_args()

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 import secrets
+import os
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
@@ -18,10 +19,14 @@ ASSETS = Path(__file__).resolve().parents[1] / "persona_web"
 
 
 class Payload(BaseModel):
+    """拒绝未知字段的请求体基类。"""
+
     model_config = ConfigDict(extra="forbid")
 
 
 class Credentials(Payload):
+    """登录/注册请求；注册时额外检查成年、数据处理同意与邀请码。"""
+
     username: str = Field(min_length=3, max_length=40)
     password: str = Field(min_length=12, max_length=128)
     invite: str = Field(default="", max_length=200)
@@ -30,12 +35,16 @@ class Credentials(Payload):
 
 
 class SessionInput(Payload):
+    """新会话标题、语言和可选人物范围。"""
+
     title: str = Field(default="", max_length=100)
     language: str = "zh"
     person_id: str | None = None
 
 
 class Message(Payload):
+    """单一聊天入口的消息与客户端重试幂等键。"""
+
     session_id: str = Field(max_length=64)
     message: str = Field(min_length=1, max_length=6000)
     person_id: str | None = None
@@ -43,6 +52,8 @@ class Message(Payload):
 
 
 class Person(Payload):
+    """用户提供的人物资料；印象与星座不构成事实证据。"""
+
     nickname: str = Field(min_length=1, max_length=40)
     aliases: str = Field(default="", max_length=120)
     relationship: str = Field(default="", max_length=100)
@@ -55,6 +66,8 @@ class Person(Payload):
 
 
 class Memory(Payload):
+    """用户记录或确认的经历、感受、印象及可选日期。"""
+
     text: str = Field(min_length=1, max_length=3000)
     kind: str = "account"
     status: str = "confirmed"
@@ -62,16 +75,24 @@ class Memory(Payload):
 
 
 class Feedback(Payload):
+    """回复评价与是否允许运营者审阅该条对话的授权。"""
+
     category: str
     note: str = Field(default="", max_length=1500)
     consent: bool = False
 
 
 class Password(Payload):
+    """注销账号时的密码确认请求。"""
+
     password: str = Field(min_length=12, max_length=128)
 
 
 def create_app(settings=None, client_factory=None, start_workers=True):
+    """构建带鉴权、来源校验、持久任务队列和静态页面的应用。
+
+    client_factory 和 start_workers 用于隔离测试；创建时会初始化数据库，
+    工作线程只在应用 lifespan 中启动。"""
     settings = settings or Settings.env()
     settings.validate()
     db = Database(settings.database_url)
@@ -80,6 +101,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
     @asynccontextmanager
     async def lifespan(app):
+        """管理 worker 生命周期；仍有同步请求时不提前关闭数据库。"""
         if start_workers:
             service.start()
         try:
@@ -105,6 +127,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
     @app.middleware("http")
     async def boundaries(request, call_next):
+        """检查 Host/Origin 和请求大小，添加安全头并隔离未处理异常。"""
         expected = urlsplit(settings.origin).netloc
         if request.headers.get("host") != expected:
             # Health checks carry no data and may use an internal host.
@@ -164,6 +187,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
         return JSONResponse({"error": "输入格式或长度不符合要求 / Invalid input"}, 422)
 
     def current(request: Request):
+        """认证 Cookie；写请求还必须携带与会话匹配的 CSRF token。"""
         try:
             user = auth.authenticate(request.cookies.get("persona_session", ""))
         except AccessError:
@@ -175,6 +199,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
         return user
 
     def store(user):
+        """为已认证身份构建受账号范围限制的存储对象。"""
         return ScopedStore(db, user["user_id"])
 
     @app.get("/")
@@ -201,6 +226,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
     @app.get("/api/public")
     def public():
+        """返回登录页需要的公开配置，不暴露凭据和内部数据库地址。"""
         return {
             "name": "Persona AI",
             "mode": settings.mode,
@@ -212,6 +238,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
     @app.post("/api/auth/{action}")
     def sign_in(action: str, payload: Credentials, request: Request):
+        """执行登录/注册限流，成功时设置 HttpOnly 会话 Cookie。"""
         if action not in ("login", "register"):
             raise HTTPException(404)
         try:
@@ -331,6 +358,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
     @app.post("/api/message", status_code=202)
     def message(payload: Message, user=Depends(current)):
+        """提交消息并返回任务 ID；浏览器通过轮询获取最终结果。"""
         return {
             "run_id": service.submit(
                 user["user_id"],
@@ -358,6 +386,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
 
 
 def main():
+    """读取本地配置并启动服务；非生产模式只允许监听回环地址。"""
     import argparse
     import uvicorn
     from dotenv import load_dotenv
@@ -365,9 +394,7 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser(description="Persona AI invite beta")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument(
-        "--port", type=int, default=int(__import__("os").getenv("PORT", "8770"))
-    )
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8770")))
     args = parser.parse_args()
     settings = Settings.env()
     if not settings.production and args.host not in ("127.0.0.1", "localhost"):

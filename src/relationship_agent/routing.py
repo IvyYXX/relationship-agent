@@ -4,6 +4,7 @@ import re
 
 
 def demo_route(message, has_report=False):
+    """按有限关键词返回离线演示意图；真实模式由模型判断。"""
     text = message.lower()
     if any(
         x in text
@@ -40,37 +41,59 @@ def demo_route(message, has_report=False):
         )
     ):
         kind = "evidence"
+    elif any(
+        x in text
+        for x in (
+            "演练",
+            "模拟对话",
+            "练习对话",
+            "rehearse",
+            "role-play",
+            "roleplay",
+            "practise a conversation",
+            "practice a conversation",
+        )
+    ) and not any(
+        x in text
+        for x in (
+            "不要演练",
+            "不用演练",
+            "不要模拟",
+            "不想演练",
+            "不需要演练",
+            "don't rehearse",
+            "no roleplay",
+            "do not rehearse",
+        )
+    ):
+        kind = "rehearsal"
     elif has_report and any(
         x in text
         for x in (
-            "后来",
-            "他说",
-            "她说",
             "更新判断",
             "反馈",
-            "he said",
-            "she said",
-            "update",
-            "since then",
+            "update the report",
+            "revise the report",
         )
     ):
         kind = "feedback"
     elif any(
         x in text
         for x in (
-            "分析",
-            "怎么办",
-            "怎么做",
-            "怎么回复",
-            "怎么说",
-            "练习",
-            "analy",
-            "what should",
-            "rehearse",
+            "详细分析",
+            "分析报告",
+            "逐项比较",
+            "detailed analysis",
+            "analysis report",
+            "structured analysis",
             "compare options",
         )
     ):
         kind = "analysis"
+    elif any(
+        x in text for x in ("他这个举动", "她这个举动", "他的话", "她的话", "这句话")
+    ):
+        kind = "chat"
     elif re.search(
         r"什么是|是什么意思|解释.{0,20}(概念|依恋|博弈)|科普|资料|理论|what is|what are|explain|define",
         text,

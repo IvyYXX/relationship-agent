@@ -13,11 +13,14 @@ from ..providers import build_model_client, ModelError
 from ..demo import MockModelClient
 from ..academic import AcademicSearch
 
-PROMPT_VERSION = "persona-1"
+PROMPT_VERSION = "persona-4-conversation-first"
 
 
 class PrivateSearch(AcademicSearch):
+    """在学术查询外发前剔除已登记人物名及明显联系方式。"""
+
     def __init__(self, store):
+        """收集当前账号昵称与别名，供确定性的第二道去标识化使用。"""
         super().__init__()
         self.names = [
             name.strip()
@@ -31,6 +34,7 @@ class PrivateSearch(AcademicSearch):
 
     def search(self, query, enabled=True):
         # A second, deterministic boundary after the model's de-identification instruction.
+        """清理查询后调用有界搜索；清理后为空则不发起网络请求。"""
         for name in sorted(self.names, key=len, reverse=True):
             pattern = re.escape(name)
             if name.isascii():
@@ -46,6 +50,7 @@ class PrivateSearch(AcademicSearch):
 
 
 def safety_response(message, language):
+    """对有限的危机或骚扰表达直接回应；不是全面语义安全分类器。"""
     m = message.lower()
     danger = any(
         x in m
@@ -93,7 +98,17 @@ def safety_response(message, language):
 
 
 class PersonaDemo(MockModelClient):
+    """面向网页的离线记忆示例，不代表真实模型的回复质量。"""
+
     def complete_json(self, stage, payload, schema=None):
+        """复用工作流样例，并让普通回复展示已确认人物记忆。"""
+        if stage == "respond":
+            decision = super().complete_json(stage, payload, schema)
+            if decision["intent"] == "chat":
+                decision["reply"] = PersonaDemo.complete_json(self, "chat", payload)[
+                    "reply"
+                ]
+            return decision
         if stage == "chat":
             en = payload.get("language") == "en"
             records = [
@@ -120,13 +135,17 @@ class PersonaDemo(MockModelClient):
 
 
 class Service:
+    """协调持久任务队列、每请求预算与有权限的人物上下文。"""
+
     def __init__(self, db, settings, client_factory=None):
+        """保存依赖并准备线程状态；创建对象时不启动后台任务。"""
         self.db, self.settings = db, settings
         self.client_factory = client_factory
         self.stop_event = threading.Event()
         self.threads = []
 
     def client(self):
+        """创建当前模式的客户端；API 失败不会自动降级成 mock。"""
         if self.client_factory:
             return self.client_factory()
         if self.settings.mode == "mock":
@@ -136,6 +155,7 @@ class Service:
         )
 
     def submit(self, user_id, sid, message, person_id=None, idempotency_key=None):
+        """解析人物与安全预检，冻结上下文后幂等入队，返回 run_id。"""
         if not isinstance(message, str) or not 1 <= len(message.strip()) <= 6000:
             raise ValueError("消息需1–6000字 / Invalid message length")
         store = ScopedStore(self.db, user_id, idempotency_key=idempotency_key)
@@ -208,6 +228,7 @@ class Service:
         return store.create_run(sid, "auto", message.strip(), agent.config(), state)
 
     def claim(self):
+        """原子领取最早排队任务；过期租约变为需手动恢复的失败任务。"""
         with self.db.tx() as c:
             # Expired leases become explicitly resumable failures, not automatically billed retries.
             c.execute(
@@ -241,6 +262,9 @@ class Service:
             return {**dict(row), "worker": worker}
 
     def reserve(self, store, rid, stage):
+        """在每次实际 HTTP 请求前原子预留用户和全站调用/费用预算。
+
+        失败请求也保留预约额；此限制不等价于模型服务商的账单上限。"""
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         with self.db.tx() as c:
             store.valid_job(c, rid)
@@ -289,6 +313,7 @@ class Service:
             return ticket
 
     def usage(self, store, ticket, usage):
+        """按配置价格保存供应商报告的 token 用量；未知费用保留为 None。"""
         safe = {
             k: v
             for k, v in usage.items()
@@ -321,6 +346,7 @@ class Service:
             )
 
     def execute(self, job):
+        """绑定租约与逐请求计量钩子，执行任务或安全/澄清直接回应。"""
         store = ScopedStore(
             self.db, job["user_id"], job["person_ids"], worker=job["worker"]
         )
@@ -365,6 +391,7 @@ class Service:
             logging.getLogger("persona").warning("job_failed run_id=%s", job["id"])
 
     def resume(self, user_id, rid):
+        """仅将版本一致的失败任务重新排队，同时重新检查并发限制。"""
         store = ScopedStore(self.db, user_id)
         config = RelationshipAgent(self.client(), store).config()
         with self.db.tx() as c:
@@ -409,6 +436,7 @@ class Service:
         return rid
 
     def public_run(self, user_id, rid):
+        """生成网页可见的任务与精简 Trace，排除冻结上下文和运行凭据。"""
         store = ScopedStore(self.db, user_id)
         r = store.run(rid)
         # No frozen context, model configuration, auth details or worker internals in public trace.
@@ -456,6 +484,7 @@ class Service:
         } | {"result": result, "trace": trace}
 
     def feedback(self, user_id, rid, category, note, consent):
+        """记录回复评价及独立的审阅授权，不隐式授权查看私人对话。"""
         allowed = {
             "helpful",
             "not_helpful",
@@ -481,6 +510,7 @@ class Service:
             )
 
     def start(self):
+        """幂等启动固定数量的后台线程，已有线程运行时不重复启动。"""
         if any(t.is_alive() for t in self.threads):
             return
         self.stop_event.clear()
@@ -504,6 +534,7 @@ class Service:
             self.threads.append(t)
 
     def stop(self):
+        """请求线程停止并有限等待；正在进行的同步 HTTP 请求不能强制取消。"""
         self.stop_event.set()
         for t in self.threads:
             t.join(timeout=2)

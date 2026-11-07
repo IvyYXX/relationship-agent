@@ -16,3 +16,6 @@ backups/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+
+# Local static-analysis cache; never part of the application.
+.ruff_cache/

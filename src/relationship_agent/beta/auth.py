@@ -1,3 +1,5 @@
+"""账号认证与短期会话；只保存密码派生值和令牌摘要。"""
+
 import hashlib
 import hmac
 import secrets
@@ -7,14 +9,18 @@ from .database import users, tokens, quota, ident, stamp
 
 
 class AccessError(ValueError):
+    """认证、邀请码或频率限制失败；信息可以安全地反馈给用户。"""
+
     pass
 
 
 def digest(value):
+    """生成会话令牌和限流标识的摘要；不能用来替代密码哈希。"""
     return hashlib.sha256(value.encode()).hexdigest()
 
 
 def password_hash(value):
+    """用随机盐和 scrypt 派生密码哈希，返回可保存的盐与摘要。"""
     salt = secrets.token_bytes(16)
     return (
         salt.hex()
@@ -24,6 +30,7 @@ def password_hash(value):
 
 
 def verify(value, stored):
+    """以恒定时间比较校验密码；损坏的哈希视为验证失败。"""
     try:
         salt, expected = stored.split(":")
         actual = hashlib.scrypt(
@@ -35,11 +42,15 @@ def verify(value, stored):
 
 
 class Auth:
+    """管理密码、短期登录令牌和共享数据库中的登录频率限制。"""
+
     def __init__(self, db, settings):
+        """绑定数据库和配置，并准备不存在账号时使用的等成本密码校验。"""
         self.db, self.settings = db, settings
         self.dummy = password_hash("dummy-timing-password")
 
     def throttle(self, ip, username):
+        """按 IP 和用户名累计十分钟窗口内的尝试，超限抛出 AccessError。"""
         minute = int(stamp() // 600)
         with self.db.tx() as c:
             for key, cap in [
@@ -72,6 +83,7 @@ class Auth:
         consent=False,
         adult=False,
     ):
+        """验证登录或注册条件，持久化会话摘要并返回原始 token 与 CSRF 值。"""
         username = username.strip().lower()
         if (
             not re.fullmatch(r"[a-z0-9_\-]{3,40}", username)
@@ -135,6 +147,7 @@ class Auth:
         return token, csrf
 
     def authenticate(self, token):
+        """校验未过期会话，返回账号身份及 CSRF 值；不返回密码哈希。"""
         with self.db.read() as c:
             row = (
                 c.execute(
@@ -150,5 +163,6 @@ class Auth:
         return dict(row)
 
     def logout(self, token):
+        """撤销当前令牌，不影响该用户的其他登录会话。"""
         with self.db.tx() as c:
             c.execute(delete(tokens).where(tokens.c.digest == digest(token)))

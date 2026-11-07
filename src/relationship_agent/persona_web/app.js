@@ -1,10 +1,45 @@
+/**
+ * Persona AI browser client: session UI, person memory and job polling.
+ * Authentication and data access are enforced by the server, never by hidden UI.
+ * Untrusted message text is rendered with textContent rather than HTML.
+ */
 "use strict";
 const $ = (id) => document.getElementById(id);
 const strings = {
   zh: {
-    welcome: "记得你在意的\n人和事。",
-    welcomeSub:
-      "把相处的片段慢慢说给我听。一起理解感受，理清关系，找到自己的表达。",
+    startConversation: "开始对话",
+    discover: "向下探索",
+    peopleHeadline: "每个人，单独记得。",
+    peopleDescription:
+      "把人物、关系和相处经历放在一起。下次聊起，从已有的了解继续。",
+    peopleExample: "人物示例",
+    illustration: "功能示意 · 虚构内容",
+    samplePersonOne: "Jamie · 约会对象",
+    samplePersonOneNote: "喜欢摄影，周末常去散步。",
+    samplePersonTwo: "Alex · 朋友",
+    samplePersonTwoNote: "上次见面，聊起了一份新工作。",
+    peopleCaption: "不同的人，各自的故事。",
+    momentsHeadline: "让片段，有迹可循。",
+    momentsDescription:
+      "由你确认哪些经历值得记住。信息有变化，随时修改或删除。",
+    momentOneDate: "第一次见面",
+    momentOne: "聊了很久，发现都喜欢摄影。",
+    confirmedExample: "已确认的经历",
+    momentTwoDate: "最近一次对话",
+    momentTwo: "他说这周工作忙，周末再约。",
+    momentsCaption: "记下他说过的话，不把猜测当事实。",
+    wordsHeadline: "找到，你的表达。",
+    wordsDescription:
+      "想倾诉，想理解一个举动，或只是想一句怎么回。从你的问题开始。",
+    sampleQuestion: "我想约他见面，但不想显得太着急。怎么说？",
+    sampleAnswer:
+      "可以轻松一点：「这周末有空吗？想约你喝杯咖啡。」表达想见面的心意，也给对方选择的空间。",
+    wordsCaption: "建议供你参考，决定留给你。",
+    footerNote: "人物 · 经历 · 对话",
+    backToLogin: "登录 / 创建账号",
+
+    welcome: "Remember.\nRelate.",
+    welcomeSub: "人物 · 经历 · 对话",
     username: "用户名",
     usernameHint: "3–40 位英文字母、数字、下划线",
     password: "密码",
@@ -20,9 +55,9 @@ const strings = {
     yourSpace: "属于你的对话空间",
     deleteChat: "删除对话",
     emptyTitle: "今天，想聊聊谁？",
-    emptySub: "可以聊一个在意的人，也可以先说说你自己的感受。",
+    emptySub: "聊聊发生的事、一起想怎么回复，也可以先说说你的感受。",
     suggestListen: "我想找人聊聊",
-    suggestRelationship: "理清一段关系",
+    suggestRelationship: "帮我想一句回复",
     suggestPerson: "记住一个重要的人",
     focus: "正在聊",
     inputHint: "Enter 发送 · Shift + Enter 换行",
@@ -76,8 +111,8 @@ const strings = {
     submitFeedback: "提交反馈",
     login: "登录",
     register: "创建账号",
-    loginTitle: "欢迎回来",
-    registerTitle: "开始你的故事",
+    loginTitle: "Welcome back.",
+    registerTitle: "创建账号",
     switchRegister: "第一次来？创建账号",
     switchLogin: "已有账号？登录",
     none: "暂不指定人物",
@@ -87,7 +122,7 @@ const strings = {
     failed: "回复未完成",
     retry: "继续未完成的回复",
     feedback: "评价回复",
-    trace: "处理记录",
+    trace: "运行详情",
     pendingMemory: "要把这段陈述记入人物档案吗？确认前不会成为长期记忆。",
     review: "查看并确认",
     reject: "不保存",
@@ -102,7 +137,7 @@ const strings = {
       "删除记忆会一并清理涉及此人物的相关对话和生成结果，防止旧内容被再次引用。其他人物的独立记忆保留。确定继续？",
     sessionDeleteWarn: "删除此对话以及从此对话保存的记忆？",
     accountDeleteWarn: "确认永久注销账号并删除人物、会话和反馈？",
-    analysis: "关系梳理",
+    analysis: "查看详细分析",
     feelings: "你表达的感受",
     hypotheses: "几种可能的解释",
     actions: "可以考虑的行动",
@@ -114,9 +149,40 @@ const strings = {
     memorySaved: "记忆已更新；此前对话仍可回看，但不会作为新的模型上下文。",
   },
   en: {
-    welcome: "The people you care about.\nThe stories that matter.",
-    welcomeSub:
-      "A space to share what happened, understand your feelings, and find your own words.",
+    startConversation: "Start a conversation",
+    discover: "Explore below",
+    peopleHeadline: "Each person. Their own story.",
+    peopleDescription:
+      "Keep people, relationships and shared experiences together. Pick up with what you already know.",
+    peopleExample: "Example profiles",
+    illustration: "Feature illustration · Fictional content",
+    samplePersonOne: "Jamie · Dating",
+    samplePersonOneNote: "Loves photography and weekend walks.",
+    samplePersonTwo: "Alex · Friend",
+    samplePersonTwoNote: "Last time you met, you talked about a new job.",
+    peopleCaption: "Different people. Distinct stories.",
+    momentsHeadline: "Keep the moments in view.",
+    momentsDescription:
+      "You choose which experiences to remember. Edit or delete them whenever things change.",
+    momentOneDate: "The first meeting",
+    momentOne: "A long conversation. A shared love of photography.",
+    confirmedExample: "Confirmed experience",
+    momentTwoDate: "The latest conversation",
+    momentTwo: "He said work was busy and suggested the weekend.",
+    momentsCaption: "Remember what was said. Keep guesses separate.",
+    wordsHeadline: "Find your own words.",
+    wordsDescription:
+      "Share a feeling, explore a gesture, or find a reply. Begin with what matters to you.",
+    sampleQuestion:
+      "I want to ask him out without sounding too eager. What could I say?",
+    sampleAnswer:
+      "Keep it simple: “Are you free this weekend? I’d love to grab a coffee.” It expresses your interest and leaves room for him to choose.",
+    wordsCaption: "Suggestions to consider. Decisions that are yours.",
+    footerNote: "People · Moments · Conversations",
+    backToLogin: "Sign in / Create an account",
+
+    welcome: "Remember.\nRelate.",
+    welcomeSub: "People · Moments · Conversations",
     username: "Username",
     usernameHint: "3–40 letters, numbers or underscores",
     password: "Password",
@@ -133,9 +199,10 @@ const strings = {
     yourSpace: "A space to be heard",
     deleteChat: "Delete chat",
     emptyTitle: "Who is on your mind?",
-    emptySub: "Talk about someone you care about, or start with how you feel.",
+    emptySub:
+      "Share what happened, find words for a reply, or start with how you feel.",
     suggestListen: "I need someone to listen",
-    suggestRelationship: "Make sense of a relationship",
+    suggestRelationship: "Help me write a reply",
     suggestPerson: "Remember someone important",
     focus: "Talking about",
     inputHint: "Enter to send · Shift + Enter for a new line",
@@ -193,8 +260,8 @@ const strings = {
     submitFeedback: "Send feedback",
     login: "Sign in",
     register: "Create account",
-    loginTitle: "Welcome back",
-    registerTitle: "Start your story",
+    loginTitle: "Welcome back.",
+    registerTitle: "Create an account",
     switchRegister: "New here? Create an account",
     switchLogin: "Already have an account? Sign in",
     none: "No person selected",
@@ -221,7 +288,7 @@ const strings = {
     sessionDeleteWarn: "Delete this chat and the memories saved from it?",
     accountDeleteWarn:
       "Permanently delete your account, people, chats and feedback?",
-    analysis: "Making sense of the situation",
+    analysis: "View detailed analysis",
     feelings: "Feelings you expressed",
     hypotheses: "Possible explanations",
     actions: "Options to consider",
@@ -276,6 +343,7 @@ function status(text) {
   $("status").textContent = text;
   $("status").classList.remove("error");
 }
+/** Send same-origin JSON; mutations carry the server-issued CSRF token. */
 async function api(path, method = "GET", body) {
   let response;
   try {
@@ -311,6 +379,9 @@ function translate() {
     "aria-label",
     lang === "en" ? "Message" : "消息",
   );
+  document
+    .querySelectorAll("[data-i18n-label]")
+    .forEach((n) => n.setAttribute("aria-label", t(n.dataset.i18nLabel)));
   authLabels();
   renderLists();
   renderChat();
@@ -354,6 +425,7 @@ $("auth-toggle").onclick = () => {
   authLabels();
   $("auth-error").textContent = "";
 };
+/** Clear in-memory account state on logout so another login cannot reuse it. */
 function showAuth() {
   clearTimeout(timer);
   generation++;
@@ -386,6 +458,7 @@ async function enter() {
   await refresh();
   $("auth-screen").hidden = true;
   $("workspace").hidden = false;
+  window.scrollTo({ top: 0, behavior: "instant" });
   const old = localStorage.getItem("persona.session");
   if (old && sessions.some((s) => s.id === old)) await loadSession(old);
   else newChat();
@@ -454,6 +527,7 @@ function newChat() {
   $("message-input").focus();
 }
 $("new-chat").onclick = newChat;
+/** Restore a conversation; the generation counter invalidates earlier polling. */
 async function loadSession(id) {
   clearTimeout(timer);
   const gen = ++generation;
@@ -474,6 +548,7 @@ async function loadSession(id) {
   const active = jobs.find((r) => ["queued", "running"].includes(r.status));
   if (active) poll(active.id, gen);
 }
+/** Render persisted jobs; reports, sources and internal traces stay opt-in. */
 function renderChat() {
   $("empty-state").hidden = jobs.length > 0;
   const root = $("messages");
@@ -516,7 +591,8 @@ function renderChat() {
           ),
         );
       if (result.sources?.length) {
-        const sources = node("div", undefined, "sources");
+        const sources = node("details", undefined, "sources");
+        sources.append(node("summary", t("sources")));
         sources.append(node("small", t("sourceLimited")));
         for (const s of result.sources) {
           const card = node("div", undefined, "source");
@@ -611,21 +687,27 @@ function analysis(r) {
     for (const text of r.update.next_steps || []) box.append(node("p", text));
     return box;
   }
-  box.append(node("p", t("analysis")));
+  // Keep old reports accessible without making internal hypotheses the main reply.
+  const chosen = r.actions?.items?.find(
+    (a) => a.id === r.actions.recommended_id,
+  );
+  if (chosen && !r.dialogue_rehearsal) box.append(node("p", chosen.first_step));
+  const report = node("details");
+  report.append(node("summary", t("analysis")));
   for (const h of r.hypotheses?.items || [])
-    box.append(node("p", h.explanation));
-  const details = node("details");
-  details.append(node("summary", t("actions")));
+    report.append(node("p", h.explanation));
+  report.append(node("h4", t("actions")));
   for (const a of r.actions?.items || []) {
-    details.append(
+    report.append(
       node("h4", a.name),
       node("p", a.first_step),
       node("p", a.condition + " · " + a.risk),
     );
   }
-  box.append(details);
+  box.append(report);
   if (r.dialogue_rehearsal) {
     const d = node("details");
+    d.open = true; // The user explicitly requested this practice.
     d.append(
       node("summary", t("rehearsal")),
       node("p", r.dialogue_rehearsal.opening),
@@ -639,6 +721,7 @@ function analysis(r) {
   }
   return box;
 }
+/** Poll one job with bounded retries; ignore results from an obsolete UI generation. */
 async function poll(id, gen, attempt = 0) {
   try {
     const r = await api("/api/runs/" + id);
@@ -667,6 +750,7 @@ async function poll(id, gen, attempt = 0) {
     }
   }
 }
+/** Keep one idempotency key per pending send so network retries cannot double-submit. */
 async function send() {
   if (sending || jobs.some((r) => ["queued", "running"].includes(r.status)))
     return;
@@ -760,6 +844,7 @@ $("person-form").onsubmit = async (e) => {
     e.target.querySelector(".form-error").textContent = err.message;
   }
 };
+/** Load an owned profile from the API; the person is context, not another agent. */
 async function openPerson(id) {
   panelId = id;
   const data = await api("/api/people/" + id);
@@ -836,6 +921,7 @@ $("talk-person").onclick = () => {
   if (innerWidth < 1100) $("close-person").click();
 };
 $("add-event").onclick = () => openEvent(panelId);
+/** Confirmation edits a user account of an event, never a verified objective fact. */
 function openEvent(pid, ev = null) {
   eventEdit = { pid, event: ev };
   $("event-form").reset();
@@ -981,10 +1067,52 @@ for (const b of document.querySelectorAll("[data-prompt]"))
           ? "我有点难过，想找人聊聊。"
           : "I feel sad and would like someone to listen."
         : lang === "zh"
-          ? "我想理清一段关系，但不知道从哪里说起。"
-          : "I want to understand a relationship but do not know where to start.";
+          ? "我想回复一个在意的人，帮我一起想想怎么说。"
+          : "Help me find the words to reply to someone I care about.";
     $("message-input").focus();
   };
+/** Reveal the public story once per element; reduced motion leaves all text visible. */
+function setupLanding() {
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const targets = [...document.querySelectorAll("[data-reveal]")];
+  let observer;
+  function configureMotion() {
+    observer?.disconnect();
+    targets.forEach((el) => el.classList.remove("reveal-pending"));
+    if (motion.matches || !("IntersectionObserver" in window)) return;
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.remove("reveal-pending");
+          entry.target.dataset.revealed = "true";
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.12 },
+    );
+    targets
+      .filter((el) => !el.dataset.revealed)
+      .forEach((el) => {
+        el.classList.add("reveal-pending");
+        observer.observe(el);
+      });
+  }
+  configureMotion();
+  motion.addEventListener("change", configureMotion);
+  for (const button of document.querySelectorAll("[data-start]")) {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      $("landing-login").scrollIntoView({
+        behavior: motion.matches ? "instant" : "smooth",
+        block: "center",
+      });
+      $("username").focus({ preventScroll: true });
+    });
+  }
+}
+setupLanding();
+/** Load public settings, then restore authentication or display the public homepage. */
 async function boot() {
   translate();
   try {

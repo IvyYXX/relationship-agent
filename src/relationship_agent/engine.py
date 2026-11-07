@@ -3,85 +3,22 @@
 from __future__ import annotations
 import time
 
-from .schemas import validate_stage, SCHEMAS
+from .schemas import validate_stage, SCHEMAS, ContractError
 from .protocols import WorkflowStore
 from .knowledge import search as search_knowledge
 from .academic import AcademicSearch
 
 
-def _needs_empathy(message, reply):
-    """Small guardrail for explicit feelings; it does not infer hidden emotions."""
-    message = message.lower()
-    reply = reply.lower()
-    feelings = (
-        "焦虑",
-        "难过",
-        "害怕",
-        "担心",
-        "生气",
-        "委屈",
-        "孤单",
-        "不安",
-        "anxious",
-        "sad",
-        "afraid",
-        "worried",
-        "angry",
-        "hurt",
-        "lonely",
-    )
-    if not any(word in message for word in feelings):
-        return False
-    acknowledgements = (
-        "听起来",
-        "听到你",
-        "理解",
-        "感到",
-        "感觉",
-        "难受",
-        "不容易",
-        "辛苦",
-        "陪你",
-        "正常",
-        "合理",
-        "你现在",
-        "it sounds",
-        "i hear",
-        "i understand",
-        "that sounds",
-        "must feel",
-        "hard",
-        "difficult",
-        "exhausting",
-        "with you",
-    )
-    return not any(marker in reply for marker in acknowledgements)
-
-
-def _empathy_fallback(message, language):
-    if language == "en":
-        return {
-            "reply": f"It sounds like this is weighing on you, especially when you say “{message[:120]}”. We do not have to solve it immediately; what feels hardest right now?"
-        }
-    emotion = next(
-        (
-            word
-            for word in ("焦虑", "难过", "害怕", "担心", "生气", "委屈", "孤单", "不安")
-            if word in message
-        ),
-        "难受",
-    )
-    return {
-        "reply": f"听起来你现在因为“{emotion}”真的很不好受。我先陪你停在这里，不急着解决；此刻最压着你的是什么？"
-    }
-
-
 class RelationshipAgent:
+    """根据需求选择有界工作流，并逐阶段校验和持久化结果。"""
+
     def __init__(self, client, store: WorkflowStore, academic=None):
+        """注入模型、存储协议和可选学术搜索，便于离线测试。"""
         self.client, self.store = client, store
         self.academic = academic or AcademicSearch()
 
     def config(self):
+        """返回可持久化的模型身份配置，不包含 API Key。"""
         return {
             "mode": self.client.mode,
             "model": self.client.model,
@@ -90,6 +27,10 @@ class RelationshipAgent:
         }
 
     def execute(self, run_id):
+        """恢复或执行任务，成功提交结果，失败保留可恢复的检查点。
+
+        普通对话合并意图判断和回答；特殊流程按需执行。已经保存的阶段
+        不会重复调用模型，但远端请求成功、本地未落盘的窗口仍可能重计费。"""
         run = self.store.run(run_id)
         if run["status"] == "complete":
             return run["result"]
@@ -101,6 +42,7 @@ class RelationshipAgent:
         common = {"language": state["language"]}
 
         def stage(name, payload):
+            """复用已保存阶段，否则调用、校验并保存结果后记录耗时。"""
             if name in state:
                 return state[name]
             self.store.trace(run_id, "stage_started", {"stage": name})
@@ -125,14 +67,21 @@ class RelationshipAgent:
         try:
             if run["kind"] == "auto":
                 previous = self.store.latest_report(run["session_id"])
-                routing = stage(
-                    "route",
+                # Answer routine requests in this same call. Keep a separate routing
+                # record for traces/compatibility without paying for a second model call.
+                decision = stage(
+                    "respond",
                     {
                         "user_message": message,
                         "conversation": state["conversation"],
+                        "observations": state["context"],
                         "has_report": bool(previous),
                     },
                 )
+                routing = {key: decision[key] for key in ("intent", "reason")}
+                state["route"] = routing
+                if routing["intent"] == "chat":
+                    state.setdefault("chat", {"reply": decision["reply"]})
                 run["kind"] = routing["intent"]
                 if run["kind"] == "feedback":
                     state["hypotheses"] = previous["current_hypotheses"]
@@ -299,35 +248,24 @@ class RelationshipAgent:
                     "avoid_exact_replies": prior_replies,
                 }
                 response = stage("chat", chat_payload)
-                # A provider can skip emotional acknowledgement or copy the previous turn.
-                # Give it one bounded repair attempt before using a safe contextual fallback.
-                duplicate = prior_replies and response["reply"].strip() in {
-                    x.strip() for x in prior_replies
-                }
-                missing_empathy = _needs_empathy(message, response["reply"])
-                if duplicate or missing_empathy:
+
+                # Exact duplication is observable. Empathy quality is evaluated using
+                # scenarios, not a keyword test that overwrites valid advice with a script.
+                def repeated(value):
+                    return value["reply"].strip() in {x.strip() for x in prior_replies}
+
+                if repeated(response):
                     state.pop("chat", None)
-                    reasons = []
-                    if duplicate:
-                        reasons.append(
-                            "Your reply was identical to an earlier assistant reply"
-                        )
-                    if missing_empathy:
-                        reasons.append(
-                            "You did not acknowledge the user's explicitly stated feeling"
-                        )
                     chat_payload["repair"] = (
-                        "; ".join(reasons)
-                        + ". Begin with a specific, gentle acknowledgement of the stated feeling, then ask exactly one new follow-up question. Do not give advice yet."
+                        "Your answer exactly repeats an earlier reply. Answer the latest "
+                        "request using the new information, with the requested advice or "
+                        "draft. Do not replace it with a generic reassurance or question."
                     )
                     response = stage("chat", chat_payload)
-                if (
-                    prior_replies
-                    and response["reply"].strip() in {x.strip() for x in prior_replies}
-                ) or _needs_empathy(message, response["reply"]):
-                    response = _empathy_fallback(message, state["language"])
-                    state["chat"] = response
-                    self.store.checkpoint(run_id, state)
+                    if repeated(response):
+                        raise ContractError(
+                            "模型重复了上一条回复，请重试 / Model repeated its previous reply; please retry"
+                        )
                 result = {"kind": "chat", "reply": response["reply"]}
                 records = [
                     (
@@ -376,6 +314,13 @@ class RelationshipAgent:
                     ),
                 ]
             else:
+                # Earlier user reports were previously dropped by the report stages.
+                # Pass only real user turns, never generated analysis as evidence.
+                user_history = [
+                    turn
+                    for turn in state.get("conversation", [])
+                    if turn.get("role") == "user"
+                ]
                 evidence = stage("extract", {"user_message": message})
                 hypotheses = stage(
                     "hypotheses",
@@ -383,6 +328,7 @@ class RelationshipAgent:
                         "user_message": message,
                         "evidence": evidence,
                         "observations": state["context"],
+                        "user_history": user_history,
                         "previous_judgments_unverified": state.get(
                             "previous_judgments", []
                         ),
@@ -403,19 +349,28 @@ class RelationshipAgent:
                         "user_message": message,
                         "evidence": evidence,
                         "hypotheses": hypotheses,
+                        "user_history": user_history,
+                        "observations": state["context"],
                     },
                 )
-                selected = next(
-                    x for x in actions["items"] if x["id"] == actions["recommended_id"]
-                )
-                dialogue = stage(
-                    "dialogue",
-                    {
-                        "user_message": message,
-                        "evidence": evidence,
-                        "selected_action": selected,
-                    },
-                )
+                # Analysis is not consent to simulate another person's response.
+                # The semantic router selects rehearsal only on an explicit request.
+                dialogue = None
+                if run["kind"] == "rehearsal":
+                    selected = next(
+                        x
+                        for x in actions["items"]
+                        if x["id"] == actions["recommended_id"]
+                    )
+                    dialogue = stage(
+                        "dialogue",
+                        {
+                            "user_message": message,
+                            "evidence": evidence,
+                            "selected_action": selected,
+                            "user_history": user_history,
+                        },
+                    )
                 result = {
                     "kind": "analysis",
                     "evidence": evidence,
@@ -439,8 +394,9 @@ class RelationshipAgent:
                             "actions": actions,
                         },
                     ),
-                    ("simulation", "rehearsal", dialogue),
                 ]
+                if dialogue is not None:
+                    records.append(("simulation", "rehearsal", dialogue))
             result.update(
                 run_id=run_id,
                 session_id=run["session_id"],

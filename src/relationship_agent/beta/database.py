@@ -29,18 +29,22 @@ meta = MetaData()
 
 
 def ident():
+    """生成应用记录 ID；ID 的不可猜测性不替代归属校验。"""
     return uuid4().hex
 
 
 def stamp():
+    """返回 Unix 秒时间戳，用于租约、排序和过期检查。"""
     return time.time()
 
 
 def idcol():
+    """为每张实体表创建独立的主键列对象。"""
     return Column("id", String(64), primary_key=True)
 
 
 def owner():
+    """创建用户外键列，账号删除时级联清理其记录。"""
     return Column(
         "user_id",
         String(64),
@@ -184,7 +188,10 @@ locks = Table("transaction_locks", meta, Column("name", String(32), primary_key=
 
 
 class Database:
+    """封装 SQLite/PostgreSQL 连接、初始表结构和短写事务。"""
+
     def __init__(self, url):
+        """规范化数据库 URL、配置连接并确保初始 schema 存在。"""
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql+psycopg://", 1)
         elif url.startswith("postgresql://"):
@@ -212,6 +219,7 @@ class Database:
         self.migrate()
 
     def migrate(self):
+        """幂等创建 v1 表并拒绝较新版本；当前不执行历史列结构升级。"""
         with self.engine.begin() as c:
             if self.engine.dialect.name == "postgresql":
                 from sqlalchemy import text
@@ -229,6 +237,7 @@ class Database:
     @contextmanager
     def tx(self):
         # Short metadata transactions only; NEVER hold this lock during model/network work.
+        """提供串行短写事务，成功提交、异常回滚；事务内禁止网络请求。"""
         with self.engine.connect() as c:
             if self.engine.dialect.name == "sqlite":
                 c.exec_driver_sql("BEGIN IMMEDIATE")
@@ -246,8 +255,10 @@ class Database:
 
     @contextmanager
     def read(self):
+        """提供只读用途的连接作用域，退出时归还连接。"""
         with self.engine.connect() as c:
             yield c
 
     def close(self):
+        """释放连接池；调用方必须先停止使用数据库的工作线程。"""
         self.engine.dispose()

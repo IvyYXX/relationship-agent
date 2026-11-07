@@ -42,6 +42,7 @@ DOCUMENTS = [
 
 
 def _tokens(value: str) -> list[str]:
+    """生成用于小型知识卡片匹配的词项，不做语义向量化。"""
     return [
         x.lower() for x in re.findall(r"[\w\u4e00-\u9fff]+", value or "") if len(x) > 1
     ]

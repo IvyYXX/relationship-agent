@@ -8,7 +8,7 @@ A relationship conversation assistant that remembers the people and experiences 
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e '.[beta,mcp,test]'
+.venv/bin/pip install -e '.[beta,mcp,test,dev]'
 .venv/bin/python persona_app.py
 ```
 
@@ -18,7 +18,7 @@ To configure a model, run `.venv/bin/python scripts/configure_model.py`, enter a
 
 ## What is implemented
 
-One checkpointed agent workflow with person profiles, confirmed event memory, bounded retrieval, source-aware answers, optional academic search and rehearsal. User accounts use opaque HttpOnly sessions, scrypt password hashing, CSRF and origin checks. Each resource is authorized on the server. Durable jobs support leases, idempotency and resume; budgets count every actual model attempt, including retries.
+One checkpointed agent workflow with person profiles, confirmed event memory, bounded retrieval, source-aware answers, optional academic search and rehearsal. Ordinary conversation now combines intent selection and the answer in one model call; specialized workflows run only when needed. Reports, sources and traces use progressive disclosure. Empathy keywords no longer replace answers with generic scripts. User accounts use opaque HttpOnly sessions, scrypt password hashing, CSRF and origin checks. Each resource is authorized on the server. Durable jobs support leases, idempotency and resume; budgets count every actual model attempt, including retries.
 
 Retrieval uses registered names/aliases and scoped lexical ranking, not vectors. Character creation means profiles of people, not independent autonomous agents or accurate digital replicas. Astrology is metadata, not behavioral evidence. Simulations are not real events.
 
@@ -28,10 +28,10 @@ Correction invalidates old conversational context. Deletion conservatively remov
 
 Run `python -m unittest discover -s tests -p 'test_*.py' -v` and `python evals/persona_eval.py`. Forty synthetic bilingual multi-turn cases compare chat-only and person-memory variants. Human ratings remain blank until reviewed. Local QA users and UI feedback are synthetic.
 
-Production requires PostgreSQL, HTTPS, an invitation code, server-side model credentials, configured model prices, a privacy contact, validated backups and completed launch checks. Deployment manifests and CI are supplied; no paid cloud account has been created or charged.
+Production requires PostgreSQL, HTTPS, an invitation code, server-side model credentials, configured model prices, a privacy contact, validated backups and completed launch checks. Deployment manifests and CI are supplied. The owner has purchased a Tencent Cloud server; the latest application deployment and HTTPS still need verification.
 
 See [deployment](deployment.md), [architecture](persona-architecture.md), [evaluation](evaluation.md), and [release status](release-status.md).
 
 ## Verification
 
-The 2026-10-09 cleanup unifies all launchers on Persona AI and removes the retired server, UI and single-user store. Current local evidence: 91 independent regressions, 8 structural scenarios, 160 mock turns, clean-wheel checks, and in-app browser acceptance. Headless Chromium is blocked by the local macOS sandbox; the standalone browser script and current PostgreSQL/container CI still need an unrestricted runner. No current cloud deployment or live-model quality is claimed. See [verification](verification.md) and [migration](migration.md).
+The November 7 maintenance pass adds module/public-interface docstrings, shared HTTP redirect policy, import-safe operator scripts, and enforced Ruff checks. Prompt text is unchanged. The local suite passes 106 regressions, 8 structural scenarios and 160 mock turns; these are engineering checks, not model-quality scores. Current cloud deployment and production PostgreSQL/container checks remain unverified. See [verification](verification.md), [maintenance](maintenance.md), and [migration](migration.md).
