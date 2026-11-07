@@ -1,4 +1,9 @@
-"""Anthropic Messages and Chat Completions adapters with bounded retries."""
+"""Anthropic Messages and Chat Completions adapters with bounded retries.
+
+调用链：build_model_client → APIClient.complete_json → _request。
+这里处理协议、超时、重试和输出契约；任务队列和跨请求预算由 Service 管理。
+before_request/after_request 让每次真实 HTTP 尝试都能被计量。
+"""
 
 from __future__ import annotations
 import json
@@ -82,6 +87,7 @@ class APIClient:
 
     def _request(self, system, user, stage):
         """发送单次逻辑请求；可重试错误最多重试一次，每次都经过计费钩子。"""
+        # 短回复与报告使用不同输出上限；这里只限制生成长度，不保证实际账单。
         body = {
             "model": self.model,
             "max_tokens": 256
@@ -94,6 +100,7 @@ class APIClient:
         if self.model.lower() == "glm-5.3":
             body["reasoning_effort"] = "low"
         headers = {"Content-Type": "application/json"}
+        # 两种协议不仅路径不同：system 的位置与鉴权头也不同。
         if self.protocol == "anthropic":
             body["system"] = system
             headers.update(
@@ -108,6 +115,7 @@ class APIClient:
                 raise ModelError(
                     "Local API request limit reached; restart the server or set a new limit deliberately"
                 )
+            # 重试也是真实请求。先检查本地上限，再让 Service 原子预约全站预算。
             self.request_count += 1
             ticket = self.before_request(stage) if self.before_request else None
             req = urllib.request.Request(
@@ -122,6 +130,7 @@ class APIClient:
                 if len(raw) > 1_000_000:
                     raise ModelError("Model response exceeded size limit")
                 data = json.loads(raw)
+                # 收到供应商用量即记账；之后输出结构失败，也不能当作没有花费。
                 if self.after_request:
                     self.after_request(ticket, data.get("usage") or {})
                 for k, v in (data.get("usage") or {}).items():
@@ -142,6 +151,7 @@ class APIClient:
             except urllib.error.HTTPError as exc:
                 code = exc.code
                 exc.close()
+                # 只重试限流/暂时服务错误；鉴权错误反复重试不会修复 Key。
                 if code in {429, 500, 502, 503, 504} and attempt == 0:
                     time.sleep(0.5)
                     continue
@@ -189,6 +199,7 @@ class APIClient:
             raise ModelError(
                 "Stage context exceeded 24000 characters; shorten the input or start a new session"
             )
+        # JSON 修复最多一次，且仍走 _request 的限额/计量；不无限修复直到成功。
         for attempt in range(2):
             text = self._request(system, user, stage)
             try:
@@ -219,6 +230,7 @@ def build_model_client(
     if mode != "api":
         raise ValueError("mode must be mock or api")
     protocol = protocol or os.getenv("RELATIONSHIP_PROTOCOL", "chat-completions")
+    # 显式参数优先，便于管理员更换 Key；密钥不进入可恢复任务的 config。
     key = api_key or os.getenv(api_key_env, "")
     if not key:
         raise ModelError(f"缺少密钥 / Missing key: {api_key_env}")

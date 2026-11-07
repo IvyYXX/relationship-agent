@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#6850cb" />
     <title>Persona AI · Remember. Relate.</title>
     <link rel="stylesheet" href="/style.css" />
+    <!-- defer 确保 DOM 建好后再绑定事件；这里的 id 与 app.js 中的 $() 调用对应。 -->
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -104,6 +105,7 @@
           <p id="auth-mode" class="notice"></p>
         </section>
       </div>
+      <!-- 公开首页的资料与对话均为静态虚构示例；data-reveal 交给 JS 控制渐入。 -->
       <main class="landing-features" aria-label="Persona AI">
         <section
           class="feature-section"
@@ -234,6 +236,7 @@
     </div>
     <!-- Authenticated workspace shares one composer for all request types. -->
     <div id="workspace" class="workspace" hidden>
+      <!-- 新对话是会话入口；人物是可在多次对话中引用的档案，两者不是两个 Agent。 -->
       <aside id="sidebar">
         <a class="brand" href="/"
           ><span class="monogram">P</span><span>Persona <b>AI</b></span></a
@@ -333,6 +336,7 @@
           </p>
         </div>
       </main>
+      <!-- 人物面板显示档案及已报告经历；事件是否成为长期记忆由后端确认状态决定。 -->
       <aside id="person-panel" class="person-panel" hidden>
         <div class="panel-heading">
           <h2 id="person-title"></h2>
@@ -369,6 +373,7 @@
         </button>
       </aside>
     </div>
+    <!-- 表单 name 是提交字段名；改名时同步检查 app.js 与后端校验。 -->
     <dialog id="person-dialog">
       <form id="person-form">
         <div class="panel-heading">
@@ -428,6 +433,7 @@
         </button>
       </form>
     </dialog>
+    <!-- 原始来源和修正后的内容分别保留，避免用户编辑后丢失陈述出处。 -->
     <dialog id="event-dialog">
       <form id="event-form">
         <div class="panel-heading">
@@ -501,6 +507,7 @@
         </button>
       </form>
     </dialog>
+    <!-- 评价不自动授权读取聊天；查看对话的授权使用独立复选框。 -->
     <dialog id="feedback-dialog">
       <form id="feedback-form">
         <div class="panel-heading">

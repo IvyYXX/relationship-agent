@@ -1,4 +1,9 @@
-"""Run repeatable local acceptance checks on synthetic, temporary databases only."""
+"""Run repeatable local acceptance checks on synthetic, temporary databases only.
+
+默认依次运行静态检查、格式、回归与两套 Mock 评测；每项保存独立日志。
+--browser 和 --package 才增加较重的环境检查。非零退出码用于阻止 CI 放行，
+summary 不把工程测试写成模型质量或公网部署验收。
+"""
 
 import argparse
 import json
@@ -26,6 +31,7 @@ def main():
     args = parser.parse_args()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    # 强制使用 Mock 与测试自建的临时库；继承环境只为找到必要运行工具。
     env = {
         **os.environ,
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -78,6 +84,7 @@ def main():
             code, log = result.returncode, result.stdout
         except subprocess.TimeoutExpired:
             code, log = 124, "Verification exceeded the five-minute check budget."
+        # 各检查独立留日志，前一项失败仍继续收集后续问题，最终统一非零退出。
         (output / (name + ".log")).write_text(log)
         results.append(
             {

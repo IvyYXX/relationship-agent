@@ -1,4 +1,9 @@
-"""Real HTTP/DB boundaries; no paid calls. Also runs against disposable Postgres."""
+"""Real HTTP/DB boundaries; no paid calls. Also runs against disposable Postgres.
+
+通过 HTTP 接口和数据库验证账号隔离、人物记忆、任务租约、额度与隐私。
+后台 worker 默认关闭，由测试显式推进执行以固定时序。测试数据库必须独立，
+设置 PERSONA_TEST_DATABASE_URL 时会清空测试表，不能指向真实用户数据。
+"""
 
 import os
 import json
@@ -30,6 +35,8 @@ from relationship_agent.providers import ModelError, APIClient
 
 
 class PersonaTests(unittest.TestCase):
+    """通过两个独立账号验证 API 权限、人物上下文与任务生命周期。"""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.settings = Settings(

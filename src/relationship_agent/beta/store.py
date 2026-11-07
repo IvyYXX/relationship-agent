@@ -1,4 +1,9 @@
-"""Tenant-scoped repository implementing the shared workflow storage protocol."""
+"""Tenant-scoped repository implementing the shared workflow storage protocol.
+
+阅读分组：归属/版本检查 → 人物与事件 → 会话与任务 → 提交 → 上下文检索。
+user_id 是身份范围；person_ids 是本次话题范围；epoch 是记忆版本。
+已保存的聊天用于展示，送入模型的历史还要通过人物范围、版本和长度过滤。
+"""
 
 import json
 import re
@@ -72,6 +77,7 @@ class ScopedStore:
             .mappings()
             .first()
         )
+        # 无论记录不存在还是属于别人，都返回相同错误，避免泄露其他账号的数据存在性。
         if not row:
             raise Missing("记录不存在 / Record not found")
         return dict(row)
@@ -92,6 +98,7 @@ class ScopedStore:
         ).first():
             raise Busy("请等待当前任务完成再修改记忆 / Wait for your active tasks")
 
+    # 修改记忆的路径共用这一规则；只改事件文本而不换版本会让旧对话重新污染上下文。
     def invalidate(self, c):
         """增加记忆版本并清除失败任务的旧快照，保留删除依赖。"""
         c.execute(
@@ -174,6 +181,7 @@ class ScopedStore:
     def purge_person_context(self, c, pid):
         # Strong deletion: remove conversations that contain this person's input or derived output.
         """删除包含该人物的会话与派生产物，并使账号旧上下文失效。"""
+        # 既检查执行时选中的人物，也检查实际提及过的人物，覆盖多人对话的删除依赖。
         affected = {
             r["session_id"]
             for r in c.execute(
@@ -222,6 +230,7 @@ class ScopedStore:
             names = [person["profile"]["nickname"]] + re.split(
                 r"[,，、\n]", person["profile"].get("aliases", "")
             )
+            # 英文别名要求完整词边界，例如 Ann 不应匹配 Joanne；中文按登记片段匹配。
             for name in filter(None, (n.strip() for n in names)):
                 pattern = re.escape(name)
                 if name.isascii():
@@ -241,6 +250,7 @@ class ScopedStore:
             and re.search(r"他|她|\b(he|she|him|her|they|them)\b", message, re.I)
         ):
             return [], all_people
+        # 单个明确名称优先于旧的下拉框选择；没有名称时才退回显式选择。
         return matched or ([selected] if selected else []), []
 
     def list_events(self, pid):
@@ -362,6 +372,7 @@ class ScopedStore:
             self.idle(c)
             self.own(c, sessions, sid)
             # Source-linked memories also removed when deleting their source conversation.
+            # 先清理来源事件，再删会话；否则事件的 SET NULL 外键会留下脱离来源的记忆。
             ids = select(runs.c.id).where(
                 runs.c.user_id == self.user_id, runs.c.session_id == sid
             )
@@ -381,6 +392,7 @@ class ScopedStore:
         """原子校验幂等键、并发上限和记忆版本，保存待执行任务。"""
         with self.db.tx() as c:
             self.own(c, sessions, sid)
+            # 此处在写事务里再次检查幂等键，防两个并发请求都通过 service 层的提前检查。
             if self.idempotency_key:
                 old = (
                     c.execute(
@@ -424,6 +436,7 @@ class ScopedStore:
                 raise Busy("最多同时提交3个任务 / Too many active requests")
             for pid in self.person_ids:
                 self.own(c, people, pid)
+            # 准备上下文与入队之间可能发生纠错；版本不一致时宁可让用户重发。
             if (state or {}).get("context_epoch", self.epoch(c)) != self.epoch(c):
                 raise Busy(
                     "准备消息期间记忆发生变化，请重试 / Memory changed while preparing; please retry"
@@ -535,6 +548,7 @@ class ScopedStore:
         候选不是已核实事实。已完成任务直接返回，避免重复生成记忆。"""
         with self.db.tx() as c:
             run = self.valid_job(c, rid)
+            # finish 必须幂等：重复提交不能再插入一份事件或工作流记忆。
             if run["status"] == "complete":
                 return
             for layer, kind, content in records:
@@ -628,6 +642,7 @@ class ScopedStore:
                 if self.person_ids
                 else []
             )
+        # 这是简单词项匹配：相关度优先，创建时间次之；没有语义向量或人格相似度。
         words = set(re.findall(r"[a-z]{2,}|[\u4e00-\u9fff]{2}", query.lower()))
         rows = sorted(
             rows,
@@ -684,6 +699,7 @@ class ScopedStore:
                 reply = result.get("reply") or result.get("answer", "")
                 pair.append({"role": "assistant", "content": reply})
             cost = len(json.dumps(pair, ensure_ascii=False))
+            # 按整轮的可用消息计算预算，不截断消息正文；报告轮只保留用户陈述。
             if used + cost > budget:
                 break
             pairs.append(pair)

@@ -1,4 +1,8 @@
-"""One explicitly requested, capped, synthetic live-model workflow (normally one call)."""
+"""One explicitly requested, capped, synthetic live-model workflow (normally one call).
+
+与默认离线验收分开，运行本文件即代表操作者主动请求真实 API 测试。
+用合成人物和临时 SQLite 库，最多四次 HTTP 模型尝试；输出也仅含合成内容。
+"""
 
 import tempfile
 from pathlib import Path
@@ -22,6 +26,7 @@ def main():
     with tempfile.TemporaryDirectory() as root:
         settings.database_url = "sqlite:///" + root + "/smoke.db"
         settings.production = False
+        # 上限按 HTTP 尝试计数，错误重试同样占用；这不是四轮对话的保证。
         settings.global_daily_calls = settings.user_daily_calls = 4
         settings.daily_budget_usd = max(settings.request_reserve_usd * 4, 0.01)
         db = Database(settings.database_url)

@@ -1,4 +1,9 @@
-"""Authenticated Persona AI HTTP application. No user-facing model configuration."""
+"""Authenticated Persona AI HTTP application. No user-facing model configuration.
+
+HTTP 边界从 create_app 开始：校验配置 → 初始化身份/存储/服务 → 注册路由。
+/api/message 返回 202 和 run_id，回答由后台生成，前端轮询 /api/runs/{rid}。
+接口只调用带账号范围的存储；模型配置不向普通用户开放。
+"""
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -133,6 +138,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
             # Health checks carry no data and may use an internal host.
             if request.url.path not in ("/healthz", "/readyz"):
                 return JSONResponse({"error": "Invalid host"}, 403)
+        # 浏览器 Cookie 会自动发送；Origin 先挡跨站写入，current 再校验 CSRF。
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get("origin") != settings.origin:
                 return JSONResponse({"error": "Invalid origin"}, 403)
@@ -140,6 +146,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
                 "application/json"
             ):
                 return JSONResponse({"error": "JSON required"}, 415)
+            # 实际读取流并累计大小，而不只信任可缺失或伪造的 Content-Length。
             chunks = []
             size = 0
             async for chunk in request.stream():
@@ -158,6 +165,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
                 "request_failed path=%s", request.url.path.split("/")[1:3]
             )
             return JSONResponse({"error": "服务暂时不可用 / Service unavailable"}, 503)
+        # 私人响应禁止浏览器/代理缓存；CSP 限制页面只能加载本站脚本。
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -214,6 +222,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
     def css():
         return FileResponse(ASSETS / "style.css", media_type="text/css")
 
+    # healthz 证明进程存在；readyz 还要证明数据库可访问，供代理/托管平台探测。
     @app.get("/healthz")
     def health():
         return {"status": "ok", "version": "0.3.0"}
@@ -301,6 +310,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
             },
         )
 
+    # 人物及事件接口：只使用 current 得到的账号，绝不接受客户端提供 user_id。
     @app.get("/api/people")
     def list_people(user=Depends(current)):
         return store(user).people()
@@ -338,6 +348,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
         store(user).delete_event(eid)
         return {"ok": True}
 
+    # 会话是消息容器；选定人物只是上下文范围，不代表创建了独立模型进程。
     @app.post("/api/sessions")
     def add_session(payload: SessionInput, user=Depends(current)):
         return store(user).create_session(**payload.model_dump())
@@ -369,6 +380,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
             )
         }
 
+    # 返回的是 public_run 过滤后的视图，不能直接把内部 run/state 原样给浏览器。
     @app.get("/api/runs/{rid}")
     def get_run(rid: str, user=Depends(current)):
         return service.public_run(user["user_id"], rid)
@@ -395,6 +407,7 @@ def main():
     parser = argparse.ArgumentParser(description="Persona AI invite beta")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8770")))
+    # --port 决定监听端口；PERSONA_ORIGIN 决定 Host/Origin 校验，两者需要一致。
     args = parser.parse_args()
     settings = Settings.env()
     if not settings.production and args.host not in ("127.0.0.1", "localhost"):

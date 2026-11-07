@@ -1,4 +1,8 @@
-"""The default path answers once while retaining the harness boundaries."""
+"""The default path answers once while retaining the harness boundaries.
+
+保护“先直接回答”的默认路径：一次模型调用带上确认记忆与历史，
+没有检索需求时不搜索；失败可恢复，但不能悄悄换成 Mock 回复冒充成功。
+"""
 
 import unittest
 from workflow_fixture import HarnessFixture
@@ -7,6 +11,8 @@ from relationship_agent.schemas import validate_stage, ContractError
 
 
 class ConversationFirstTests(unittest.TestCase):
+    """确保日常对话不默认展开成多阶段分析报告。"""
+
     def setUp(self):
         self.fixture = HarnessFixture()
         self.addCleanup(self.fixture.close)

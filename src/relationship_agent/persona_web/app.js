@@ -5,6 +5,7 @@
  */
 "use strict";
 const $ = (id) => document.getElementById(id);
+// 文案键与 HTML 的 data-i18n 属性对应；不要直接用翻译后的文字作为业务判断条件。
 const strings = {
   zh: {
     startConversation: "开始对话",
@@ -302,8 +303,12 @@ const strings = {
       "Memory updated. Older chats remain visible but will not enter new model context.",
   },
 };
+// 浏览器只记住界面语言和最近会话 ID；人物、消息与账号权限以服务端返回为准。
 let lang = localStorage.getItem("persona.language") || "zh";
 if (!strings[lang]) lang = "zh";
+// 页面状态分三组：账号/列表、当前会话/任务、人物/表单面板。
+// generation 是页面请求代数：切换会话或退出后加一，使旧异步响应失效。
+// pendingSend 保存尚未确认收到的发送请求，重试时复用同一个幂等键。
 let csrf = "",
   me = null,
   config = {},
@@ -321,6 +326,7 @@ let csrf = "",
   sending = false,
   pendingSend = null;
 const t = (key) => strings[lang][key] || key;
+// 所有用户文字和模型回复都走 textContent，避免被浏览器当作 HTML 或脚本执行。
 function node(tag, text, cls) {
   const n = document.createElement(tag);
   if (text !== undefined) n.textContent = text;
@@ -367,6 +373,7 @@ async function api(path, method = "GET", body) {
   }
   return value;
 }
+// 这里只翻译界面；不会重写已有消息，也不会修改后端已保存的会话语言。
 function translate() {
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   document
@@ -446,6 +453,7 @@ function showAuth() {
   $("message-input").value = "";
   localStorage.removeItem("persona.session");
 }
+// 写操作后重新读取服务端列表，避免前端推算与真实记忆/会话状态发生偏差。
 async function refresh() {
   me = await api("/api/me");
   csrf = me.csrf;
@@ -460,6 +468,7 @@ async function enter() {
   $("workspace").hidden = false;
   window.scrollTo({ top: 0, behavior: "instant" });
   const old = localStorage.getItem("persona.session");
+  // 本地残留的 ID 可能属于上一个账号；仅恢复当前账号列表中确实存在的会话。
   if (old && sessions.some((s) => s.id === old)) await loadSession(old);
   else newChat();
 }
@@ -509,6 +518,7 @@ function renderLists() {
     $("sessions-list").append(b);
   }
 }
+// 新对话先清空页面；第一次发送时才创建数据库会话，避免产生大量空记录。
 function newChat() {
   clearTimeout(timer);
   generation++;
@@ -549,6 +559,8 @@ async function loadSession(id) {
   if (active) poll(active.id, gen);
 }
 /** Render persisted jobs; reports, sources and internal traces stay opt-in. */
+// 一条 job 对应一次用户输入及其执行结果；排队、失败与完成分别渲染。
+// 自然语言 reply 是主要回答，详细分析、引用和运行详情属于补充信息。
 function renderChat() {
   $("empty-state").hidden = jobs.length > 0;
   const root = $("messages");
@@ -599,6 +611,7 @@ function renderChat() {
           let safe = false;
           try {
             const u = new URL(s.url);
+            // 即使后端已校验，展示层仍拒绝带用户名密码或非 HTTPS 的来源链接。
             safe = u.protocol === "https:" && !u.username && !u.password;
           } catch {}
           if (safe) {
@@ -680,6 +693,7 @@ function renderChat() {
     sending || jobs.some((r) => ["queued", "running"].includes(r.status));
   $("focus-person").disabled = $("send").disabled;
 }
+// 复杂报告和演练保留独立渲染，不把假设中的对话伪装成真实聊天历史。
 function analysis(r) {
   const box = node("div", undefined, "bubble");
   if (r.kind === "feedback") {
@@ -725,6 +739,7 @@ function analysis(r) {
 async function poll(id, gen, attempt = 0) {
   try {
     const r = await api("/api/runs/" + id);
+    // 等待期间用户可能已经切换会话；旧响应不能覆盖新页面。
     if (gen !== generation) return;
     const index = jobs.findIndex((x) => x.id === id);
     if (index < 0) jobs.push(r);
@@ -742,6 +757,7 @@ async function poll(id, gen, attempt = 0) {
   } catch (e) {
     if (gen === generation) {
       showError(e);
+      // 轮询失败只重试查询，不重新提交模型任务；逐步延长间隔，最多重试五次。
       if (attempt < 5)
         timer = setTimeout(
           () => poll(id, gen, attempt + 1),
@@ -786,6 +802,8 @@ async function send() {
         person_id: focus,
         idempotency_key: crypto.randomUUID(),
       };
+    // POST 返回任务 ID，代表已受理；实际回答由 worker 生成，再通过 poll 读取。
+    // 网络失败时不清空 pendingSend，避免用户再点发送触发重复计费任务。
     const r = await api("/api/message", "POST", pendingSend);
     if (gen !== generation) return;
     pendingSend = null;
@@ -803,6 +821,7 @@ async function send() {
 }
 $("send").onclick = send;
 $("message-input").addEventListener("keydown", (e) => {
+  // 中文输入法选字也会触发 Enter；组合输入期间不能误发消息。Shift+Enter 保留换行。
   if (e.isComposing || e.keyCode === 229) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -848,6 +867,7 @@ $("person-form").onsubmit = async (e) => {
 async function openPerson(id) {
   panelId = id;
   const data = await api("/api/people/" + id);
+  // 快速点击另一个人物时，前一个人物的迟到响应不能覆盖当前面板。
   if (panelId !== id) return;
   $("sidebar").classList.remove("open");
   $("person-panel").hidden = false;
@@ -913,6 +933,7 @@ $("close-person").onclick = () => {
   panelId = null;
   $("person-panel").hidden = true;
 };
+// “聊聊这个人”是在同一个 Agent 中选择人物上下文，不是启动另一个人格 Agent。
 $("talk-person").onclick = () => {
   const id = panelId;
   newChat();
@@ -1043,6 +1064,7 @@ $("delete-account-form").onsubmit = async (e) => {
     e.target.querySelector(".form-error").textContent = err.message;
   }
 };
+// 对回复打分与授权维护者查看本次对话是两个决定；consent 独立传给后端。
 $("feedback-form").onsubmit = async (e) => {
   e.preventDefault();
   try {
@@ -1077,6 +1099,7 @@ function setupLanding() {
   const targets = [...document.querySelectorAll("[data-reveal]")];
   let observer;
   function configureMotion() {
+    // 用户切换系统减少动态效果设置时，先撤销旧观察器和隐藏状态，保证文字可见。
     observer?.disconnect();
     targets.forEach((el) => el.classList.remove("reveal-pending"));
     if (motion.matches || !("IntersectionObserver" in window)) return;
@@ -1086,6 +1109,7 @@ function setupLanding() {
           if (!entry.isIntersecting) continue;
           entry.target.classList.remove("reveal-pending");
           entry.target.dataset.revealed = "true";
+          // 每个模块只渐入一次，避免上下滚动时反复闪烁。
           observer.unobserve(entry.target);
         }
       },
@@ -1107,10 +1131,12 @@ function setupLanding() {
         behavior: motion.matches ? "instant" : "smooth",
         block: "center",
       });
+      // 滚动已由上面完成；聚焦不再触发浏览器第二次跳动。
       $("username").focus({ preventScroll: true });
     });
   }
 }
+// 首页动画只改变展示，不读取人物资料，也不触发模型调用。
 setupLanding();
 /** Load public settings, then restore authentication or display the public homepage. */
 async function boot() {

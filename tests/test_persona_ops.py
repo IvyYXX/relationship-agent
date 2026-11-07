@@ -1,4 +1,8 @@
-"""使用临时数据库验证加密备份、反馈授权和只读 MCP 人物隔离。"""
+"""使用临时数据库验证加密备份、反馈授权和只读 MCP 人物隔离。
+
+备份恢复在独立临时库中进行，登录令牌不随备份恢复。反馈审阅检查独立授权，
+MCP 测试检查限定人物和已确认事件；这些测试不表示已完成公网部署。
+"""
 
 import tempfile
 import unittest
@@ -18,6 +22,8 @@ from relationship_agent.beta.service import Service
 
 
 class OpsTests(unittest.TestCase):
+    """验证运维操作及外部只读工具不会扩大数据访问范围。"""
+
     def test_encrypted_backup_restores_relations_without_login_tokens(self):
         with tempfile.TemporaryDirectory() as d:
             a = Database("sqlite:///" + d + "/a.db")

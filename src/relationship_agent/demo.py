@@ -1,4 +1,8 @@
-"""Clearly labelled deterministic fixtures. Never presented as model reasoning."""
+"""Clearly labelled deterministic fixtures. Never presented as model reasoning.
+
+固定样例用于测试分支、契约和恢复，不用于训练，也不代表真实建议质量。
+complete_json 与 APIClient 保持相同形状，便于在不花费额度时验证工程链路。
+"""
 
 import re
 from dataclasses import dataclass
@@ -38,6 +42,7 @@ class MockModelClient:
         def t(zh, eng):
             return eng if en else zh
 
+        # 演示仅把已知主题映射为研究词，不把用户完整关系叙述外发。
         if stage == "academic_query":
             text = (
                 payload["user_message"]
@@ -129,6 +134,7 @@ class MockModelClient:
                     for x in retrieved
                 ],
             }
+        # 白名单片段只用于结构测试：不是通用的信息抽取能力。
         if stage == "extract":
             message = payload["user_message"]
             # Only literal fragments that actually occur in this input.
@@ -192,6 +198,7 @@ class MockModelClient:
                     ),
                 ],
             }
+        # 保留前轮判断以便验证反馈链路；固定样例不能作为实际恋爱建议。
         if stage == "hypotheses":
             previous = payload.get("previous_judgments_unverified", [])
             if previous:

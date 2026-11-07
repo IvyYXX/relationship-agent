@@ -1,4 +1,8 @@
-"""Local hidden key entry and safe .env update; never prints the secret."""
+"""Local hidden key entry and safe .env update; never prints the secret.
+
+只在 main 中交互，输入密钥不回显。保留 .env 里的其他配置，
+用 JSON 引号编码值以兼容特殊字符；修改后需要重启服务才会重新读取。
+"""
 
 from pathlib import Path
 import getpass
@@ -39,6 +43,7 @@ def main():
         "RELATIONSHIP_PROTOCOL": "chat-completions",
     }
     for name, value in values.items():
+        # JSON 引号保护空格等字符；替换回调用字面值，避免正则解释值中的反斜杠。
         line = name + "=" + json.dumps(value)
         text = (
             re.sub(r"^" + name + r"=.*$", lambda _: line, text, flags=re.M)
@@ -46,6 +51,7 @@ def main():
             else text + "\n" + line + "\n"
         )
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # 文件已存在时 open 的 mode 不会重设权限，所以还需显式限制为当前用户可读写。
     os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(text)

@@ -1,4 +1,8 @@
-"""Deterministic routing for offline demos; live routing uses the model contract."""
+"""Deterministic routing for offline demos; live routing uses the model contract.
+
+仅供 MockModelClient 使用。关键词的判断顺序会影响演示分支，
+但这里不是线上意图分类器；真实模型的路由规则在 prompts.py。
+"""
 
 import re
 
@@ -6,6 +10,7 @@ import re
 def demo_route(message, has_report=False):
     """按有限关键词返回离线演示意图；真实模式由模型判断。"""
     text = message.lower()
+    # 优先识别明确的“只倾听/不分析”，再判断专门工作流，减少演示误触发。
     if any(
         x in text
         for x in (
@@ -67,6 +72,7 @@ def demo_route(message, has_report=False):
         )
     ):
         kind = "rehearsal"
+    # 更新判断需要旧报告作为对象；没有旧报告时不能凭空修正假设状态。
     elif has_report and any(
         x in text
         for x in (

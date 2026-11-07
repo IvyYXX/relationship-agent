@@ -1,4 +1,8 @@
-"""Regression boundaries for import-safe operator scripts and shared HTTP policy."""
+"""Regression boundaries for import-safe operator scripts and shared HTTP policy.
+
+保护维护约定：导入运维脚本不能改配置或启动服务；模型与检索共用
+禁止重定向策略；提示词迁移后旧导入路径仍然可用。
+"""
 
 from contextlib import ExitStack
 from pathlib import Path
@@ -15,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    """验证模块导入与共享基础设施的维护约定。"""
+
     def test_operator_scripts_have_no_import_time_side_effects(self):
         # Importing a helper for inspection must not prompt, spend credit, bind ports,
         # mutate configuration, or start a long-running backup process.

@@ -1,4 +1,9 @@
-"""Local operator tools. Database access is an operator privilege, never an HTTP route."""
+"""Local operator tools. Database access is an operator privilege, never an HTTP route.
+
+这些命令有运维级数据库权限，不是面向用户的 HTTP 接口。stats 仅返回
+汇总，review 要求独立的反馈授权，backup/restore 用独立 Fernet 密钥。
+生产备份保留与删除请求落实仍是部署者的责任。
+"""
 
 import argparse
 import json
@@ -25,6 +30,7 @@ from .auth import password_hash
 
 def backup(db, path, key):
     """创建不含登录令牌的加密快照，使用排他创建避免覆盖已有备份。"""
+    # 登录 token 不进入备份，恢复后的用户必须重新登录；版本/锁行由目标库初始化。
     tables = [t for t in meta.sorted_tables if t not in (tokens, versions, locks)]
     with db.tx() as c:
         payload = {
@@ -35,6 +41,7 @@ def backup(db, path, key):
                 for t in tables
             },
         }
+    # 先取一致快照再加密，文件权限为 0600；密钥不能与备份放在一起公开。
     encrypted = Fernet(key).encrypt(json.dumps(payload, ensure_ascii=False).encode())
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +59,7 @@ def restore(db, path, key):
     with db.tx() as c:
         if c.execute(select(users.c.id).limit(1)).first():
             raise ValueError("Restore only into an empty isolated database")
+        # 按外键依赖顺序恢复，先父表再子表；目标库必须为空，避免覆盖现有账号。
         for t in meta.sorted_tables:
             rows = payload["tables"].get(t.name, [])
             if rows:
@@ -90,6 +98,7 @@ def stats(db):
                 select(attempts.c.usage, attempts.c.estimated_usd)
             ).mappings()
         ]
+    # 统计完成任务的端到端时间（含排队），不是模型单次生成延迟。
     latency = sorted(
         r["finished"] - r["created"]
         for r in jobs
@@ -121,6 +130,7 @@ def review(db, fid):
     """仅在用户明确授权时返回对应反馈关联的输入与结果。"""
     with db.read() as c:
         f = c.execute(select(feedback).where(feedback.c.id == fid)).mappings().first()
+        # 提交评价不自动授权查看聊天；只有这条反馈独立勾选同意才可审阅。
         if not f or not f["consent"]:
             raise ValueError("No explicit consent to inspect conversation")
         r = (

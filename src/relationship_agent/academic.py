@@ -1,4 +1,9 @@
-"""Bounded academic search. Provider credentials never enter model context or traces."""
+"""Bounded academic search. Provider credentials never enter model context or traces.
+
+输入为短研究主题，输出为 documents、providers 状态和缓存标记。
+先并行取各来源，再按 DOI/标题去重；只有摘要/片段，没有下载论文全文。
+transport 可替换为测试函数，所以离线测试不会访问真实学术服务。
+"""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -90,6 +95,7 @@ class AcademicSearch:
 
     def _provider(self, name, query):
         """读取单个来源并规范化最多三条记录；失败转为可显示状态。"""
+        # 未配置 Scholar 的 SerpAPI Key 时跳过该来源，其他来源仍可继续。
         if name == "Google Scholar" and not self.keys["serpapi"]:
             return [], {"provider": name, "status": "not_configured", "count": 0}
         try:
@@ -142,6 +148,7 @@ class AcademicSearch:
                 data[field] = []
             if not isinstance(data.get(field), list):
                 raise ValueError("unexpected response")
+            # 将三个供应商的不同字段统一成同一种文档，后续引擎不必知道 API 差异。
             docs = []
             for item in data[field][:3]:
                 title = str(item.get("title") or "")[:350]
@@ -190,6 +197,7 @@ class AcademicSearch:
                         "found_in": [name],
                     }
                 )
+            # 区分成功但无结果、未配置、鉴权失败和不可用；空列表不代表无相关研究。
             return docs, {
                 "provider": name,
                 "status": "ok" if docs else "empty",
@@ -225,6 +233,7 @@ class AcademicSearch:
                 ],
                 "cached": False,
             }
+        # 缓存使用去除首尾空白的查询作为键，返回深拷贝，避免调用方修改后污染下一次搜索。
         cached = self.cache.get(query)
         if cached and time.monotonic() - cached[0] < 900:
             result = copy.deepcopy(cached[1])
@@ -239,6 +248,7 @@ class AcademicSearch:
                 if position >= len(papers):
                     continue
                 doc = papers[position]
+                # DOI 与规范化标题都参与匹配，同一文献保留多个来源的 found_in 信息。
                 aliases = ["title:" + re.sub(r"\W+", "", doc["title"].lower())]
                 if doc["doi"]:
                     aliases.append("doi:" + doc["doi"].lower())
@@ -269,6 +279,7 @@ class AcademicSearch:
             "cached": False,
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
+        # 所有来源均为成功、空结果或未配置时才缓存；暂时限流不会被固定成十五分钟的失败。
         if all(
             s["status"] in ("ok", "empty", "not_configured")
             for s in result["providers"]

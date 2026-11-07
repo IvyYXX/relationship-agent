@@ -1,4 +1,9 @@
-"""Integration tests for evidence boundaries, persistence, recovery and protocols."""
+"""Integration tests for evidence boundaries, persistence, recovery and protocols.
+
+重点检查执行器的状态与来源边界：失败后从检查点恢复、演练不变成经历、
+引用必须来自输入。ProviderTests 用本机 HTTP 服务模拟两种模型协议，
+因此需要本地网络权限，但不连接真实模型服务。
+"""
 
 import json
 import sys
@@ -17,6 +22,8 @@ from workflow_fixture import HarnessFixture
 
 
 class HarnessTests(unittest.TestCase):
+    """验证执行阶段、持久化检查点和证据来源之间的一致性。"""
+
     def test_auto_routes_and_preserves_cross_workflow_history(self):
         for message, intent in [
             ("我很焦虑，只想聊聊，不想分析", "chat"),
@@ -343,6 +350,7 @@ class HarnessTests(unittest.TestCase):
 
 @contextmanager
 def provider(responder):
+    """用调用者提供的响应逻辑启动本地模型替身，退出时关闭线程与端口。"""
     calls = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -374,6 +382,8 @@ def provider(responder):
 
 
 class ProviderTests(unittest.TestCase):
+    """通过本地 HTTP 替身检查请求协议和有限重试。"""
+
     def test_api_full_loop_and_feedback_with_local_provider(self):
 
         def responder(body, count):

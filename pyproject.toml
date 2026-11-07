@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["fastapi==0.142.2", "sqlalchemy==2.0.54", "psycopg[binary]==3.3.6", "uvicorn==0.53.0", "python-dotenv==1.2.3", "cryptography==50.0.1"]
 
+# 运行时依赖在上方；开发检查、MCP、测试工具按需安装，减少正式服务的依赖面。
 [project.optional-dependencies]
 dev = ["ruff==0.17.4"]
 mcp = ["mcp>=1.20,<2"]
@@ -17,6 +18,7 @@ mcp = ["mcp>=1.20,<2"]
 beta = []
 test = ["httpx==0.28.1", "playwright==1.63.0"]
 
+# pip 安装后生成的命令行入口；多个 Web 命令都指向同一个正式应用。
 [project.scripts]
 relationship-agent = "relationship_agent.beta.app:main"
 relationship-agent-web = "relationship_agent.beta.app:main"
@@ -26,6 +28,7 @@ persona-ai = "relationship_agent.beta.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# 前端文件必须进入 wheel，否则源码运行正常，安装后却会找不到页面。
 [tool.setuptools.package-data]
 relationship_agent = ["persona_web/*.html", "persona_web/*.js", "persona_web/*.css"]
 

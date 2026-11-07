@@ -1,4 +1,9 @@
-"""A bounded, checkpointed harness workflow, not an unconstrained autonomous agent."""
+"""A bounded, checkpointed harness workflow, not an unconstrained autonomous agent.
+
+阅读顺序：execute 载入任务 → stage 复用检查点或调用模型 → 按 kind 分支
+组织结果 → store.finish 提交。state 是可持久化的中间状态，result 是最终产物。
+普通聊天走 respond，只有明确的复杂需求才继续执行专门阶段。
+"""
 
 from __future__ import annotations
 import time
@@ -38,11 +43,13 @@ class RelationshipAgent:
             raise ValueError(
                 "恢复时请使用相同模型配置；Key 可以更换 / Resume needs the same model configuration"
             )
+        # state 随检查点持久化；重启后以阶段名称为键找到已经完成的结果。
         state, message = run["state"], run["input"]
         common = {"language": state["language"]}
 
         def stage(name, payload):
             """复用已保存阶段，否则调用、校验并保存结果后记录耗时。"""
+            # 普通聊天的 respond 已填入 chat；这个命中可避免额外一次 HTTP 调用。
             if name in state:
                 return state[name]
             self.store.trace(run_id, "stage_started", {"stage": name})
@@ -82,6 +89,7 @@ class RelationshipAgent:
                 state["route"] = routing
                 if routing["intent"] == "chat":
                     state.setdefault("chat", {"reply": decision["reply"]})
+                # 改变的是本次执行分支；持久化中间结果仍通过 checkpoint 保存。
                 run["kind"] = routing["intent"]
                 if run["kind"] == "feedback":
                     state["hypotheses"] = previous["current_hypotheses"]
@@ -91,6 +99,7 @@ class RelationshipAgent:
                         state["retrieved"] = search_knowledge(
                             message, language=state["language"]
                         )
+                        # “这个概念呢”这类追问先用当前问题检索；无命中才借用最近用户原话。
                         if not state["retrieved"] and any(
                             x in message.lower()
                             for x in ("它", "这个", "这种", "that", "this", "it ")
@@ -135,6 +144,7 @@ class RelationshipAgent:
                 search = state.get(
                     "academic_search", {"query": "", "documents": [], "providers": []}
                 )
+                # 只有标题/作者的记录不足以支撑知识回答，不让模型凭元数据编结论。
                 evidence = [
                     d
                     for d in search["documents"]
@@ -151,6 +161,7 @@ class RelationshipAgent:
                             "academic": True,
                         },
                     )
+                    # URL、作者等元数据来自检索记录，不使用模型自行编写的链接。
                     citations = []
                     for source in response["sources"]:
                         doc = next(
@@ -254,6 +265,7 @@ class RelationshipAgent:
                 def repeated(value):
                     return value["reply"].strip() in {x.strip() for x in prior_replies}
 
+                # 只修复完全重复的回复，不凭“安慰关键词”覆盖正常答案。
                 if repeated(response):
                     state.pop("chat", None)
                     chat_payload["repair"] = (
@@ -284,6 +296,7 @@ class RelationshipAgent:
                         "observations": state["context"],
                     },
                 )
+                # 复制旧判断再更新，保留原检查点；last_update 记录此次修正的来源。
                 hypotheses = [dict(x) for x in state["hypotheses"]]
                 for change in update["updates"]:
                     for h in hypotheses:
@@ -355,6 +368,7 @@ class RelationshipAgent:
                 )
                 # Analysis is not consent to simulate another person's response.
                 # The semantic router selects rehearsal only on an explicit request.
+                # 给一句回复建议仍属于聊天；只有 rehearsal 分支会生成假想对方回复。
                 dialogue = None
                 if run["kind"] == "rehearsal":
                     selected = next(
@@ -397,6 +411,7 @@ class RelationshipAgent:
                 ]
                 if dialogue is not None:
                     records.append(("simulation", "rehearsal", dialogue))
+            # 各分支统一补元数据，前端通过 kind 区分展示；服务层再过滤内部字段。
             result.update(
                 run_id=run_id,
                 session_id=run["session_id"],
@@ -409,6 +424,7 @@ class RelationshipAgent:
             )
             if "route" in state:
                 result["routing"] = state["route"]
+            # 最终回答和分层记忆在一个事务内提交，避免只保存一半的状态。
             self.store.finish(run_id, result, records)
             self.store.trace(run_id, "committed", {"layers": [x[0] for x in records]})
             return result

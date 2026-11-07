@@ -1,4 +1,9 @@
-"""Paired memory/no-memory evaluation. Structural results are not quality scores."""
+"""Paired memory/no-memory evaluation. Structural results are not quality scores.
+
+同一案例分别运行 profile_only 与 person_memory，两者都有人物资料，
+只有后者预先写入一条已确认事件。分开账号避免试验组历史污染对照组，
+人工评分保持空值，直到读过真实输出并完成审阅。
+"""
 
 import argparse
 import json
@@ -46,6 +51,7 @@ def main():
         auth = Auth(db, settings)
         svc = Service(db, settings)
         for case in cases()[: a.limit]:
+            # 每个变体使用不同账号；两边都有 profile，仅已确认事件的可用性不同。
             for memory_on in (False, True):
                 token, _ = auth.login(
                     case["id"] + ("_mem" if memory_on else "_base"),
@@ -100,6 +106,7 @@ def main():
                         "variant": "person_memory" if memory_on else "profile_only",
                         "language": case["language"],
                         "rubric": case["rubric"],
+                        # 空值表示尚未人工评价，不能把任务完成率自动转换成共情/有用性分数。
                         "human_scores": {
                             "empathy": None,
                             "groundedness": None,

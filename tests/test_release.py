@@ -1,4 +1,8 @@
-"""Regression coverage for the unified entry point and the real worker lifecycle."""
+"""Regression coverage for the unified entry point and the real worker lifecycle.
+
+ReleaseTests 启用真实后台 worker，通过 HTTP 轮询观察完成与恢复，
+覆盖应用生命周期；模型仍用测试替身。另检查安装包内容、统一入口和队列限制。
+"""
 
 import ast
 import importlib.util
@@ -29,6 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseTests(unittest.TestCase):
+    """在真实 worker 生命周期下验证网页服务的完整请求流程。"""
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -220,6 +226,8 @@ class ReleaseTests(unittest.TestCase):
 
 
 class PackagingAndQueueTests(unittest.TestCase):
+    """验证发布内容、入口兼容性与队列资源限制。"""
+
     def test_wheel_check_rejects_stale_modules(self):
         spec = importlib.util.spec_from_file_location(
             "build_release", ROOT / "scripts/build_release.py"

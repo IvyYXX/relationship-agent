@@ -1,4 +1,8 @@
-"""Storage boundary for the shared workflow; no dependency on a web app or database."""
+"""Storage boundary for the shared workflow; no dependency on a web app or database.
+
+引擎只知道任务、检查点和结果，不直接访问 SQL 表。生产实现是
+beta.store.ScopedStore；测试也通过隔离数据库验证相同协议。
+"""
 
 from typing import Any, Protocol
 

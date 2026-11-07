@@ -3,12 +3,17 @@
 The first version deliberately uses deterministic lexical retrieval. It keeps the
 retrieved text and source together so a vector index can be added later without
 changing the Agent contract.
+
+DOCUMENTS 是中文卡片与检索标签，ENGLISH 按同一 ID 提供英文版本。
+search 先匹配关键词再裁剪结果；这些内容是项目编写的入门笔记，
+不能作为已检索到的学术论文或诊断依据。
 """
 
 from __future__ import annotations
 
 import re
 
+# 这是可维护的入门资料，不是用户私有记忆；source 会随引用展示。
 DOCUMENTS = [
     {
         "id": "uncertainty",
@@ -48,6 +53,7 @@ def _tokens(value: str) -> list[str]:
     ]
 
 
+# 中英文共享稳定 ID；检索排序一致，展示内容按 language 选择。
 ENGLISH = {
     "uncertainty": (
         "Relationship uncertainty and reassurance",
@@ -86,6 +92,7 @@ def search(query: str, limit: int = 3, language: str = "zh") -> list[dict]:
         score += len(query_tokens & haystack)
         if score:
             scored.append((score, doc))
+    # 分数相同时用固定 ID 排序，使离线评测可重复；没有命中就返回空列表。
     scored.sort(key=lambda item: (-item[0], item[1]["id"]))
     return [
         {

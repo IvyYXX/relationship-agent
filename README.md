@@ -2,7 +2,7 @@
 
 **Remember. Relate.** 一个带人物记忆的关系交流助手：创建人物档案，持续聊天，确认相处经历，修正记忆；需要时再检索研究来源或练习沟通。
 
-[English](docs/README.en.md) · [产品与架构](docs/persona-architecture.md) · [部署](docs/deployment.md) · [验收与状态](docs/release-status.md) · [评测](docs/evaluation.md) · [代码维护](docs/maintenance.md)
+[English](docs/README.en.md) · [产品与架构](docs/persona-architecture.md) · [部署](docs/deployment.md) · [验收与状态](docs/release-status.md) · [评测](docs/evaluation.md) · [代码维护](docs/maintenance.md) · [代码阅读顺序](docs/code-reading-guide.md)
 
 **当前状态：邀请制 Beta 的本地实现。公网部署、真实模型质量评审和真实用户测评尚未完成。** 没有把离线 Mock 通过率当作模型效果或用户满意度。没有自动花费模型额度。
 

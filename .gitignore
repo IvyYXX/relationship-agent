@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# 用户数据库、生成结果、模型密钥和备份不进入版本历史；忽略规则不删除本地文件。
 memory/
 outputs/
 .env

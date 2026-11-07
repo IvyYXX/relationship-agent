@@ -1,4 +1,9 @@
-"""Reproducible isolated browser smoke test; synthetic data only."""
+"""Reproducible isolated browser smoke test; synthetic data only.
+
+流程：临时 mock 服务 → 合成账号 → 浏览器登录/人物/记忆/语言/移动布局。
+finally 负责回收子进程。此脚本需要可启动的 Chromium；不可把浏览器启动
+受限误写成已经通过自动化界面验收。
+"""
 
 import os
 import argparse
@@ -32,12 +37,14 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    # 让系统分配临时端口，避免占用开发者正在测试的 8770；随后另起隔离服务。
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
 
     with tempfile.TemporaryDirectory() as d:
+        # 环境显式覆盖模型模式与数据库；页面操作只写合成测试账号的数据。
         env = {
             **os.environ,
             "DATABASE_URL": "sqlite:///" + d + "/browser.sqlite",

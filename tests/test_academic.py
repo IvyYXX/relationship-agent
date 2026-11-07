@@ -1,4 +1,8 @@
-"""Offline provider fixtures and evidence workflow integration; no external quota."""
+"""Offline provider fixtures and evidence workflow integration; no external quota.
+
+使用固定搜索响应测试来源合并、证据级别和失败降级。这里的论文是合成资料，
+验证的是检索契约，不是文献本身的真实性，也不使用外部搜索额度。
+"""
 
 import json
 from pathlib import Path
@@ -16,6 +20,7 @@ from workflow_fixture import HarnessFixture
 
 
 def fixture(url, headers):
+    """模拟三家服务不同的字段格式，特意让两条结果指向同一论文。"""
     if "serpapi.com" in url:
         return {
             "organic_results": [
@@ -57,6 +62,8 @@ def fixture(url, headers):
 
 
 class AcademicTests(unittest.TestCase):
+    """验证各搜索商响应转换为统一来源结构后的边界。"""
+
     def service(self, transport=fixture):
         s = AcademicSearch(transport)
         s.keys = dict(serpapi="test-secret", semantic="", openalex="")

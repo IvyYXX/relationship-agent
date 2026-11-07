@@ -2,6 +2,9 @@
 
 Live evaluation remains in persona_eval.py with an explicit API call budget.
 Structural success is not a model-quality score.
+
+cases.json 保存输入和人工审阅标准。本脚本通过真实 Service/ScopedStore
+配合 mock 模型检查阶段、来源分层和引用约束，不使用旧的单用户执行器。
 """
 
 import argparse
@@ -32,6 +35,7 @@ def main():
         db = Database(settings.database_url)
         try:
             auth, service = Auth(db, settings), Service(db, settings)
+            # 每个案例独立账号与会话，保证前一个案例的记忆不会影响下一项。
             for case in cases:
                 token, _ = auth.login(
                     case["id"],

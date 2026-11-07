@@ -2,6 +2,7 @@
 .auth-screen {
   background: #f5f3fa;
 }
+/* 全局颜色和间距变量：优先在这里调整主题，避免逐个覆盖组件颜色。 */
 :root {
   font-family:
     Inter,
@@ -369,6 +370,7 @@ small {
   margin-top: 3px;
 }
 /* Authenticated chat and person-memory panels. */
+/* 工作区与公开首页分开布局；滚动发生在聊天/侧栏容器内，保持输入框可用。 */
 .workspace {
   display: grid;
   grid-template-columns: 248px 1fr;
@@ -859,6 +861,7 @@ details h4 {
 [hidden] {
   display: none !important;
 }
+/* 窄屏将人物面板覆盖展示，避免三栏同时挤压聊天区。 */
 @media (max-width: 1100px) {
   .workspace:has(.person-panel:not([hidden])) {
     grid-template-columns: 220px 1fr;
@@ -875,6 +878,7 @@ details h4 {
     box-shadow: -15px 0 70px #3d24521c;
   }
 }
+/* 手机布局折叠侧栏，并缩减表单、消息和留白的尺寸。 */
 @media (max-width: 700px) {
   .auth-hero {
     grid-template-columns: 1fr;
@@ -1202,6 +1206,7 @@ details h4 {
   color: #71608f;
   text-decoration: none;
 }
+/* 默认内容可见，JS 成功安装观察器后才加 reveal-pending；不依赖动画才能阅读。 */
 [data-reveal] {
   opacity: 1;
   transform: none;
@@ -1263,6 +1268,7 @@ details h4 {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* 遵循系统减少动态效果偏好，清除过渡和位移，内容直接显示。 */
   [data-reveal],
   [data-reveal].reveal-pending {
     opacity: 1;

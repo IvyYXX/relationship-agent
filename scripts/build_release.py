@@ -1,4 +1,9 @@
-"""Build from a clean source copy so stale build/ files cannot re-enter the wheel."""
+"""Build from a clean source copy so stale build/ files cannot re-enter the wheel.
+
+不从旧 build/ 打包，而是复制允许的源码到临时目录构建。verify_wheel
+再核对静态资源、命令入口和禁止携带的私人文件；需要网络获取构建依赖时
+由 pip 处理，与调用模型无关。
+"""
 
 import argparse
 import shutil
@@ -55,6 +60,7 @@ def main():
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="persona-build-") as temporary:
+        # 干净副本不包含旧 build/egg-info，防止退役模块被构建缓存带回安装包。
         source = Path(temporary) / "source"
         source.mkdir()
         for name in ("pyproject.toml", "README.md"):
@@ -79,6 +85,7 @@ def main():
             check=True,
         )
         wheel = next(wheels.glob("relationship_agent-*.whl"))
+        # 构建成功不代表内容正确；检查资源和入口后才把文件交给发布流程。
         verify_wheel(wheel)
         target = output / wheel.name
         shutil.copy2(wheel, target)

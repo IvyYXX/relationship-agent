@@ -1,6 +1,9 @@
 """Operator-started stdio MCP, scoped to one user AND one person.
 
 The local Host gains access to this person's confirmed accounts. No remote MCP endpoint.
+
+这是可选的本地只读扩展，网页启动时不会自动启动它。操作者显式指定
+username 和 person_id，Host 获得该人物资料及已确认事件，不能切换其他人物。
 """
 
 import argparse
@@ -23,6 +26,7 @@ def build_server(database_url, username, person_id):
     store = ScopedStore(db, uid, [person_id])
     store.person(person_id)
     server = FastMCP("Persona AI: one selected person")
+    # 协议标签向 Host 说明工具是只读；真正的数据范围仍由下面的 ScopedStore 限制。
     annotations = ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, openWorldHint=False
     )
@@ -40,12 +44,14 @@ def build_server(database_url, username, person_id):
         """Return up to 8 confirmed user accounts, never simulations or another person's records."""
         if len(query) > 200:
             raise ValueError("Query too long")
+        # 待确认/拒绝的事件不提供给 Host；不让外部客户端绕过记忆确认流程。
         rows = [x for x in store.list_events(person_id) if x["status"] == "confirmed"]
         words = query.lower().split()
         rows.sort(
             key=lambda x: (sum(w in x["text"].lower() for w in words), x["created"]),
             reverse=True,
         )
+        # 条数与字符数同时限制，防一次工具调用把整个档案塞入 Host 上下文。
         selected = []
         used = 0
         for x in rows:

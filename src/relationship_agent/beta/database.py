@@ -2,6 +2,10 @@
 
 Version 1 creates a separate database; legacy single-user records are never claimed.
 SQLite is only for local development. PostgreSQL is required in production.
+
+逻辑关系：users → people / conversations → jobs；人物事件关联 person_id，
+工作流记忆和 Trace 关联 run_id。quota 是配额账本，attempts 记录请求用量。
+表名和外键属于持久数据契约，修改时需设计迁移，不能只改 Python 字段。
 """
 
 from contextlib import contextmanager
@@ -55,6 +59,7 @@ def owner():
 
 
 versions = Table("schema_versions", meta, Column("version", Integer, primary_key=True))
+# 账号 epoch 是上下文版本号：确认/更正记忆后增加，旧任务不能继续用旧快照。
 users = Table(
     "users",
     meta,
@@ -76,6 +81,7 @@ tokens = Table(
 people = Table(
     "people", meta, idcol(), owner(), Column("profile", JSON), Column("created", Float)
 )
+# conversations 是会话容器；人物删除时外键置空，业务层还会清理相关会话。
 sessions = Table(
     "conversations",
     meta,
@@ -86,6 +92,8 @@ sessions = Table(
     Column("person_id", String(64), ForeignKey("people.id", ondelete="SET NULL")),
     Column("created", Float),
 )
+# jobs 同时保存用户消息和任务状态：queued → running → complete/failed。
+# config 是模型身份，state 是中间检查点，result 是最终输出；worker/lease_until 防旧执行者写入。
 runs = Table(
     "jobs",
     meta,
@@ -113,6 +121,7 @@ runs = Table(
     Column("idempotency_key", String(64)),
     UniqueConstraint("user_id", "idempotency_key"),
 )
+# person_events 是可跨会话检索的候选/已确认记忆；quote 保留原始来源，text 可被纠正。
 events = Table(
     "person_events",
     meta,
@@ -130,6 +139,7 @@ events = Table(
     Column("created", Float),
     UniqueConstraint("run_id", "person_id"),
 )
+# workflow_memory 按 observation/inference/simulation 分层留痕；不等同于已确认人物事件。
 memories = Table(
     "workflow_memory",
     meta,
@@ -166,6 +176,7 @@ feedback = Table(
     Column("consent", Integer),
     Column("created", Float),
 )
+# 配额键区分认证窗口与每日模型额度；模型配额还有 global 和账号两个层级。
 quota = Table(
     "quota_ledger",
     meta,
@@ -173,6 +184,7 @@ quota = Table(
     Column("calls", Integer),
     Column("reserved_usd", Float),
 )
+# 一次用户消息可能产生多次 HTTP 尝试；用 attempts 才能计入重试和 JSON 修复成本。
 attempts = Table(
     "model_attempts",
     meta,
@@ -224,6 +236,7 @@ class Database:
             if self.engine.dialect.name == "postgresql":
                 from sqlalchemy import text
 
+                # 多个实例并发启动时串行建表，避免同时写入初始版本与锁行。
                 c.execute(text("SELECT pg_advisory_xact_lock(73918421)"))
             meta.create_all(c)
             current = c.execute(select(versions.c.version)).scalars().all()

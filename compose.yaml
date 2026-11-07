@@ -1,4 +1,5 @@
 services:
+  # 数据库存放在持久卷；不映射宿主机端口，应用通过内部网络访问。
   db:
     image: postgres:17
     restart: unless-stopped
@@ -6,6 +7,7 @@ services:
       POSTGRES_DB: persona
       POSTGRES_USER: persona
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a database password}
+    # 删除容器不等于删除这些命名卷；操作 down -v 会影响持久数据。
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +30,7 @@ services:
       interval: 20s
       timeout: 5s
       retries: 3
+  # 仅启用 backup profile 时运行；加密密钥由 .env 提供，备份卷独立保存。
   backup:
     build: .
     restart: unless-stopped
@@ -41,6 +44,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  # 对外只开放 HTTP/HTTPS，由 Caddy 转发到 app:8770。域名需先指向服务器。
   proxy:
     image: caddy:2
     restart: unless-stopped

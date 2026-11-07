@@ -1,4 +1,9 @@
-"""环境配置和生产启动约束；读取配置不会调用模型。"""
+"""环境配置和生产启动约束；读取配置不会调用模型。
+
+Settings.env 读取值，validate 检查组合是否允许启动。配置来自管理员，
+不是聊天输入。金额单位为美元，价格为每百万 token；0 代表未配置价格，
+不能解释为真实模型免费。
+"""
 
 from dataclasses import dataclass
 import os
@@ -84,6 +89,7 @@ class Settings:
             )
         ):
             raise ValueError("Budgets and prices must be finite nonnegative numbers")
+        # 生产配置失败就拒绝启动，不能悄悄退回 mock 或关闭 Cookie 安全属性。
         if self.production:
             if p.scheme != "https" or not self.database_url.startswith(
                 ("postgresql:", "postgresql+")
@@ -97,6 +103,7 @@ class Settings:
                 raise ValueError(
                     "Production requires API mode, a 16+ character invite code and privacy contact"
                 )
+            # 这里只检查凭据存在，不验证账号额度或模型权限；需要另做有预算的联调。
             if not os.getenv("GLM_API_KEY") and not os.getenv("PERSONA_API_KEY"):
                 raise ValueError("Production model key is missing")
             if min(self.input_usd_per_million, self.output_usd_per_million) <= 0:

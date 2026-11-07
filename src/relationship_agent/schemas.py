@@ -1,4 +1,9 @@
-"""Bounded JSON contracts and evidence validation; no third-party runtime."""
+"""Bounded JSON contracts and evidence validation; no third-party runtime.
+
+SCHEMAS 是示例形状，不是标准 JSON Schema；空字符串表示字符串类型，
+列表的首项表示元素形状。validate 负责结构，validate_stage 再检查来源引用
+和状态约束。通过校验不能证明情感判断正确。
+"""
 
 # 保留原有导入路径，供外部调用者使用；提示词本身集中维护。
 from .prompts import INSTRUCTIONS as INSTRUCTIONS
@@ -10,6 +15,7 @@ class ContractError(ValueError):
     pass
 
 
+# 模板只规定形状；例如空字符串不是默认回答，不能直接当作成功结果。
 SCHEMAS = {
     "respond": {"intent": "chat", "reason": "", "reply": ""},
     "route": {"intent": "chat", "reason": ""},
@@ -91,6 +97,7 @@ def validate_stage(stage, value, payload):
     if len(json.dumps(value, ensure_ascii=False)) > 16000:
         raise ContractError("Stage output exceeded 16000 characters")
     validate(value, SCHEMAS[stage])
+    # 意图必须属于显式集合；模型输出不能直接变成任意工具名或数据库操作。
     if stage in {"route", "respond"}:
         if value["intent"] not in {
             "chat",
@@ -103,6 +110,7 @@ def validate_stage(stage, value, payload):
             raise ContractError("Unknown intent")
         if value["intent"] == "feedback" and not payload.get("has_report"):
             raise ContractError("Feedback requires an existing analysis")
+    # 普通聊天必须有答案；专门工作流尚未运行，禁止先声称检索/演练已完成。
     if stage == "respond":
         if value["intent"] == "chat" and not value["reply"].strip():
             raise ContractError("Direct conversation requires a reply")
@@ -118,6 +126,7 @@ def validate_stage(stage, value, payload):
             )
     if stage == "chat" and not value["reply"].strip():
         raise ContractError("Chat reply must not be empty")
+    # 同时核对来源、标题和逐字片段，防止引用看似正确但实际未被检索到的资料。
     if stage == "knowledge":
         if not value["answer"].strip():
             raise ContractError("Knowledge answer must not be empty")
@@ -135,6 +144,7 @@ def validate_stage(stage, value, payload):
                 )
         if supplied and not value["sources"]:
             raise ContractError("Retrieved knowledge requires a citation")
+    # 逐字引用只能证明用户确实说过，不能证明所述事件在现实中已核实。
     if stage == "extract":
         if len(value["questions"]) > 3:
             raise ContractError("At most three questions")
@@ -164,6 +174,7 @@ def validate_stage(stage, value, payload):
                 for x in payload.get("user_history", [])
                 if x.get("role") == "user"
             ]
+            # supported/weakened 只能继承相同旧判断或通过反馈流程更新，不能任意升级。
             previous = {
                 x["id"]: x for x in payload.get("previous_judgments_unverified", [])
             }

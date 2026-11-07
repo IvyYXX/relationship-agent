@@ -1,3 +1,4 @@
+# 域名由环境注入；证书申请要求 DNS 和公网端口可达，配置本身不购买或注册域名。
 {$PERSONA_DOMAIN} {
     encode zstd gzip
     reverse_proxy app:8770

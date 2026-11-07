@@ -1,4 +1,8 @@
-"""Keep the user's question and earlier reports available across workflows."""
+"""Keep the user's question and earlier reports available across workflows.
+
+针对“用户问问题却得到意图分析”的回归：普通分析仍走自然聊天，
+需要正式报告时保留此前用户叙述，但模型生成的台词不能作为事实来源。
+"""
 
 import unittest
 from workflow_fixture import HarnessFixture
@@ -8,6 +12,8 @@ from relationship_agent.routing import demo_route
 
 
 class QuestionFirstTests(unittest.TestCase):
+    """保护以用户问题为中心的路由与历史来源规则。"""
+
     def setUp(self):
         self.fixture = HarnessFixture()
         self.addCleanup(self.fixture.close)

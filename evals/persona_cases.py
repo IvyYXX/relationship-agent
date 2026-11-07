@@ -1,4 +1,9 @@
-"""Forty authored multi-turn cases; synthetic only, never production conversations."""
+"""Forty authored multi-turn cases; synthetic only, never production conversations.
+
+SCENARIOS 每项包含 ID、中文标签、中英文问题及人工判断标准。cases()
+按语言展开：第一轮先开启关系话题，第二轮提出具体问题，检查连续性。
+这些全是合成输入，不包含用户的私人对话。
+"""
 
 SCENARIOS = [
     (

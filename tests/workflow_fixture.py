@@ -2,6 +2,10 @@
 
 Forced kinds exercise individual engine stages only. Public requests always use
 Service.submit() and the router; no test-only endpoint is exposed by the app.
+
+
+HarnessFixture 创建临时账号与数据库，退出时清理。Driver 复用正式队列和执行器，
+只有指定 kind 的分支直接构造阶段，用于孤立测试；auto 分支才经过正常意图选择。
 """
 
 import tempfile
@@ -20,6 +24,8 @@ from relationship_agent.knowledge import search
 
 
 class HarnessFixture:
+    """管理一次隔离测试所需的数据库、账号和带用户范围的存储器。"""
+
     def __init__(self):
         self.temp = tempfile.TemporaryDirectory()
         self.settings = Settings(
@@ -37,6 +43,7 @@ class HarnessFixture:
         return Driver(self, client or MockModelClient(), academic)
 
     def records(self, sid, layer=None):
+        """读取指定会话的工作流记录；layer 可筛选事实、假设或演练层。"""
         with self.db.read() as connection:
             query = select(memories).where(
                 memories.c.user_id == self.uid, memories.c.session_id == sid
@@ -57,12 +64,15 @@ class HarnessFixture:
 
 
 class Driver:
+    """以同步方式推进正式任务队列，便于精确断言阶段执行与恢复结果。"""
+
     def __init__(self, fixture, client, academic=None):
         self.fixture, self.client, self.academic = fixture, client, academic
         self.store = fixture.store
         self.service = Service(fixture.db, fixture.settings, lambda: client)
 
     def start(self, sid, message, kind="rehearsal"):
+        """准备测试任务；显式阶段绕过路由，仅用于验证对应模块。"""
         if kind == "auto":
             return self.service.submit(self.fixture.uid, sid, message)
         previous = self.store.latest_report(sid)
@@ -93,6 +103,7 @@ class Driver:
         )
 
     def execute(self, rid):
+        """领取并执行一个任务，返回提交后的结果；失败直接暴露给测试。"""
         run = self.store.run(rid)
         if run["status"] == "complete":
             return run["result"]

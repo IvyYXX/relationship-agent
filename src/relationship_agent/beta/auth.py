@@ -1,4 +1,8 @@
-"""账号认证与短期会话；只保存密码派生值和令牌摘要。"""
+"""账号认证与短期会话；只保存密码派生值和令牌摘要。
+
+原始登录令牌仅交给浏览器 Cookie，数据库保存摘要。CSRF 值随已认证
+身份返回，用于写请求校验。Auth 认证身份，具体资源归属由 ScopedStore 验证。
+"""
 
 import hashlib
 import hmac
@@ -51,6 +55,7 @@ class Auth:
 
     def throttle(self, ip, username):
         """按 IP 和用户名累计十分钟窗口内的尝试，超限抛出 AccessError。"""
+        # 变量名沿用 minute，实际每桶为 600 秒；记录落库以跨进程共享限流。
         minute = int(stamp() // 600)
         with self.db.tx() as c:
             for key, cap in [
@@ -92,6 +97,7 @@ class Auth:
             raise AccessError(
                 "用户名需3–40位字母/数字，密码需12–128位 / Invalid username or password length"
             )
+        # 注册要求成年与数据处理同意；普通登录不能被缺少注册勾选项阻塞。
         if register:
             if not consent or not adult:
                 raise AccessError(
@@ -125,12 +131,14 @@ class Auth:
                     .mappings()
                     .first()
                 )
+            # 不存在的用户也运行一次 scrypt，降低通过耗时枚举账号的风险。
             if (
                 not verify(password, row["password_hash"] if row else self.dummy)
                 or not row
             ):
                 raise AccessError("用户名或密码错误 / Invalid credentials")
             uid = row["id"]
+        # token 用于 Cookie 身份，csrf 用于写请求；两者用途不同，不复用同一随机值。
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         with self.db.tx() as c:
             c.execute(delete(tokens).where(tokens.c.expires < stamp()))
@@ -144,6 +152,7 @@ class Auth:
                     expires=stamp() + 7 * 86400,
                 )
             )
+        # 只有响应时返回原始 token，数据库一直只保留 digest(token)。
         return token, csrf
 
     def authenticate(self, token):

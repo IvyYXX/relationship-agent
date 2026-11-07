@@ -7,6 +7,7 @@ services:
     plan: starter
     region: singapore
     healthCheckPath: /readyz
+    # sync:false 表示部署时填写；模型密钥只给后端，不能写进前端资源或提交仓库。
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -44,6 +45,7 @@ services:
         value: '40'
       - key: PERSONA_GLOBAL_DAILY_CALLS
         value: '200'
+# 托管数据库与 Web 分离；本文件描述部署资源，不表示已经部署或验收完成。
 databases:
   - name: persona-db
     plan: basic-256mb

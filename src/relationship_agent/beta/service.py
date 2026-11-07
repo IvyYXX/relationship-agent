@@ -1,4 +1,9 @@
-"""Durable job claims, bounded model spending, and person-aware workflow execution."""
+"""Durable job claims, bounded model spending, and person-aware workflow execution.
+
+submit 冻结上下文并入队；后台 start → claim → execute；失败由 resume
+显式恢复。Service 不保存 API Key 到任务，恢复时可换 Key，但模型身份和
+提示词版本必须一致。安全与人物澄清可以直接回应而不调用模型。
+"""
 
 import os
 import re
@@ -13,6 +18,7 @@ from ..providers import build_model_client, ModelError
 from ..demo import MockModelClient
 from ..academic import AcademicSearch
 
+# 恢复资格的一部分：改回答语义时升级版本，纯注释/格式变动无需升级。
 PROMPT_VERSION = "persona-4-conversation-first"
 
 
@@ -193,6 +199,7 @@ class Service:
         language = session["language"]
         client = self.client()
         agent = RelationshipAgent(client, store)
+        # 这是入队时冻结的快照；worker 不重新读取不断变化的人物资料来执行同一任务。
         state = {
             "language": language,
             "context": store.context(sid, query=message),
@@ -200,9 +207,11 @@ class Service:
             "prompt_version": PROMPT_VERSION,
             "multi_person": len(all_choices) > 1,
             "context_epoch": context_epoch,
+            # mentioned_person_ids 用于后续删除依赖；selected_person_id 用于重试一致性校验。
             "mentioned_person_ids": mentioned_ids,
             "selected_person_id": person_id,
         }
+        # 危机预检优先于人物澄清，避免迫切求助被“你说的是谁”挡住。
         safe = safety_response(message, language)
         if safe:
             state["direct_reply"] = safe
@@ -253,6 +262,7 @@ class Service:
             )
             if not row:
                 return None
+            # 每次领取使用新的 worker token；旧线程即使晚返回，也不能覆盖新任务结果。
             worker = ident()
             c.execute(
                 update(runs)
@@ -271,6 +281,7 @@ class Service:
             c.execute(
                 update(runs).where(runs.c.id == rid).values(lease_until=stamp() + 300)
             )
+            # 两级额度在同一事务更新；账号超限时，全站的本次扣减也会回滚。
             for key, cap in [
                 (f"model:{day}:global", self.settings.global_daily_calls),
                 (f"model:{day}:{store.user_id}", self.settings.user_daily_calls),
@@ -328,6 +339,7 @@ class Service:
             and isinstance(v, int)
             and v >= 0
         }
+        # 两种协议的 token 字段名不同；统一到配置价格，但未知费用不会填成零。
         amount = (
             safe.get("prompt_tokens", safe.get("input_tokens", 0))
             * self.settings.input_usd_per_million
@@ -400,6 +412,7 @@ class Service:
                 return rid
             if run["status"] != "failed":
                 raise Busy("Task is already active")
+            # 恢复不是重新提交：上下文、模型身份和提示词语义都必须匹配原任务。
             if (
                 run["epoch"] != store.epoch(c)
                 or run["config"] != config
@@ -441,6 +454,7 @@ class Service:
         r = store.run(rid)
         # No frozen context, model configuration, auth details or worker internals in public trace.
         result = r["result"] or None
+        # 隐藏的是内部冻结上下文与未筛选的搜索结果；已验证的 sources 仍可展示。
         if result:
             result = {
                 k: v
@@ -513,6 +527,7 @@ class Service:
         """幂等启动固定数量的后台线程，已有线程运行时不重复启动。"""
         if any(t.is_alive() for t in self.threads):
             return
+        # stop_event 同时用作可中断等待，停止服务时无需等完固定 sleep。
         self.stop_event.clear()
         self.threads = []
 

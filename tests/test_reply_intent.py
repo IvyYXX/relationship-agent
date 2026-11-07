@@ -1,4 +1,8 @@
-"""Regressions for support-plus-advice and opt-in simulation."""
+"""Regressions for support-plus-advice and opt-in simulation.
+
+把曾出现的产品问题固定为测试：安抚加建议应直接回应，分析不自动演练，
+有用回答不能仅因缺少固定共情关键词就被模板替换。这里验证流程，不评价共情质量。
+"""
 
 import unittest
 from workflow_fixture import HarnessFixture
@@ -7,6 +11,8 @@ from relationship_agent.routing import demo_route
 
 
 class ReplyIntentTests(unittest.TestCase):
+    """验证安抚、建议和演练按明确意图组合执行。"""
+
     def setUp(self):
         self.fixture = HarnessFixture()
         self.addCleanup(self.fixture.close)
