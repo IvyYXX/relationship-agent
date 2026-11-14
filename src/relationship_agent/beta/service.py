@@ -19,7 +19,7 @@ from ..demo import MockModelClient
 from ..academic import AcademicSearch
 
 # 恢复资格的一部分：改回答语义时升级版本，纯注释/格式变动无需升级。
-PROMPT_VERSION = "persona-4-conversation-first"
+PROMPT_VERSION = "persona-5-attachments"
 
 
 class PrivateSearch(AcademicSearch):
@@ -160,10 +160,19 @@ class Service:
             "api", api_key=os.getenv("PERSONA_API_KEY") or os.getenv("GLM_API_KEY")
         )
 
-    def submit(self, user_id, sid, message, person_id=None, idempotency_key=None):
+    def submit(
+        self,
+        user_id,
+        sid,
+        message,
+        person_id=None,
+        idempotency_key=None,
+        attachment_ids=None,
+    ):
         """解析人物与安全预检，冻结上下文后幂等入队，返回 run_id。"""
         if not isinstance(message, str) or not 1 <= len(message.strip()) <= 6000:
             raise ValueError("消息需1–6000字 / Invalid message length")
+        attachment_ids = sorted(attachment_ids or [])
         store = ScopedStore(self.db, user_id, idempotency_key=idempotency_key)
         session = store.session(sid)
         if idempotency_key:
@@ -183,6 +192,7 @@ class Service:
                 # Older saved jobs have no selected_person_id field; preserve their replay behavior.
                 if (
                     existing["input"] != message.strip()
+                    or existing["state"].get("attachment_ids", []) != attachment_ids
                     or existing["session_id"] != sid
                     or existing["state"].get("selected_person_id", person_id)
                     != person_id
@@ -212,6 +222,24 @@ class Service:
             "selected_person_id": person_id,
         }
         # 危机预检优先于人物澄清，避免迫切求助被“你说的是谁”挡住。
+        if attachment_ids:
+            import json
+            from .attachments import AttachmentStore
+            from ..attachments import retrieve
+
+            files = AttachmentStore(self.db, user_id).select(sid, attachment_ids)
+            # 同一次请求总上下文有界；附件不加入外部搜索，更不会成为系统指令。
+            state["context"] = store.context(sid, max_chars=3000, query=message)
+            state["conversation"] = store.conversation(sid, budget=3000)
+            available = max(
+                1200,
+                min(
+                    7000,
+                    20000 - len(json.dumps(state, ensure_ascii=False)) - len(message),
+                ),
+            )
+            state["attachment_context"] = retrieve(files, message, available)
+            state["attachment_ids"] = attachment_ids
         safe = safety_response(message, language)
         if safe:
             state["direct_reply"] = safe
@@ -234,7 +262,13 @@ class Service:
         previous = store.latest_report(sid)
         if previous:
             state["previous_judgments"] = previous["current_hypotheses"]
-        return store.create_run(sid, "auto", message.strip(), agent.config(), state)
+        return store.create_run(
+            sid,
+            "attachment" if attachment_ids else "auto",
+            message.strip(),
+            agent.config(),
+            state,
+        )
 
     def claim(self):
         """原子领取最早排队任务；过期租约变为需手动恢复的失败任务。"""
@@ -461,6 +495,17 @@ class Service:
                 for k, v in result.items()
                 if k not in ("memory_used", "academic_search", "input", "model")
             }
+            if result.get("attachment_coverage"):
+                from .database import events
+
+                with self.db.read() as c:
+                    result["attachment_memory_saved"] = bool(
+                        c.execute(
+                            select(events.c.id).where(
+                                events.c.run_id == rid, events.c.user_id == user_id
+                            )
+                        ).first()
+                    )
             if result.get("memory_proposal"):
                 from .database import events
 

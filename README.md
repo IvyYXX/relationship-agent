@@ -1,117 +1,183 @@
 # Persona AI
 
-**Remember. Relate.** 一个带人物记忆的关系交流助手：创建人物档案，持续聊天，确认相处经历，修正记忆；需要时再检索研究来源或练习沟通。
+**Remember. Relate.**
 
-[English](docs/README.en.md) · [产品与架构](docs/persona-architecture.md) · [部署](docs/deployment.md) · [验收与状态](docs/release-status.md) · [评测](docs/evaluation.md) · [代码维护](docs/maintenance.md) · [代码阅读顺序](docs/code-reading-guide.md)
+一个带人物记忆的情感交流 Agent。结合你提供的聊天和相处经历，帮你理解互动、组织回复、决定下一步；你确认过的记忆，可以在下次对话中继续使用。
 
-**当前状态：邀请制 Beta 的本地实现。公网部署、真实模型质量评审和真实用户测评尚未完成。** 没有把离线 Mock 通过率当作模型效果或用户满意度。没有自动花费模型额度。
+[English](docs/README.en.md) · [快速开始](#快速开始) · [Harness 设计](#harness-设计) · [代码导读](docs/code-reading-guide.md) · [部署指南](docs/deployment.md) · [评测](docs/evaluation.md)
 
-## 运行
+## 它能帮你做什么？
+
+你不必每次重新解释“他是谁、之前发生过什么”。为重要的人建立档案，把相关经历逐步补充进去，再围绕当下的问题继续聊。
+
+| 你想做的事 | Persona AI 如何帮助你 |
+| --- | --- |
+| “我现在很乱，先听我说说。” | 自然对话，回应情绪，再根据你的需要梳理问题或给建议。 |
+| “他这句话是什么意思，我怎么回？” | 结合聊天原文、人物资料和已确认经历，提供可能的解释与回复建议。 |
+| “上次说的是小林，不是小周。” | 分开管理人物，支持纠正记忆；指代不清时先澄清。 |
+| “帮我看看这份聊天记录。” | 上传 TXT 或文字型 PDF，围绕具体问题分析，并查看回答对应的原文引用。 |
+| “下次见面我想说清楚，陪我练一下。” | 按需启动沟通演练，演练内容与真实经历分开处理。 |
+| “这个说法有什么研究依据？” | 按需检索学术来源，展示可核对的引用。 |
+
+**默认直接回答你的问题。** 详细分析、研究搜索和对话演练在需要时才展开。
+
+### 一个典型用法
+
+1. 添加人物“小林”，填写昵称、别名和你愿意提供的背景。
+2. 点击“聊聊这个人”，粘贴对话或上传聊天记录。
+3. 提问：**“他约我周五喝咖啡，我想答应，但明天才能确认时间。帮我写一句回复。”**
+4. 查看回复建议；使用附件分析时，还可以展开对应的原文依据。
+5. 把需要保留的经历确认为人物记忆，下次聊到小林时继续使用。
+
+人物档案记录的是你提供的信息，分析是基于这些信息的推测，不代表能够读懂或准确预测对方。你可以纠正、删除记忆，也可以导出自己的数据。
+
+## 快速开始
+
+需要 **Python 3.10 或更高版本**。以下命令适用于 macOS / Linux：
 
 ```bash
+git clone https://github.com/IvyYXX/relationship-agent.git
+cd relationship-agent
 python3 -m venv .venv
-.venv/bin/pip install -e '.[beta,mcp,test,dev]'
-.venv/bin/python web_app.py
+.venv/bin/pip install -e .
+.venv/bin/python persona_app.py
 ```
 
-打开 **http://127.0.0.1:8770/**。本地默认使用明显标注的演示模式。点击“创建账号”，使用自己的用户名和至少12位密码；本地未设置邀请码时无需填写。使用昵称即可，建议先用虚构数据体验。
+打开 **[http://127.0.0.1:8770/](http://127.0.0.1:8770/)**，点击“创建账号”，设置用户名和至少 12 位密码。本地未配置邀请码时无需填写，界面支持中文和英文。
 
-已有本地 QA 账号仅供演示，不用于真实私人内容或公网环境。公网使用独立的 PostgreSQL 数据库，不上传本地 memory 目录。
+新安装且未配置模型时，默认运行 **Mock 演示模式**：无需 API Key、不调用付费模型，适合体验页面和操作流程。要评估实际回答质量，请连接真实模型。已有 `.env` 的安装会沿用其中的配置。
 
-在 PyCharm 中运行 `web_app.py` 或 `persona_app.py` 均启动同一个 Persona AI。安装后的 `persona-ai`、`relationship-agent`、`relationship-agent-web` 和 `python -m relationship_agent` 也指向这一服务。旧入口、旧界面与单用户存储实现已移出；原数据库、记录和 `.env` 不会被删除或自动归入新账号。操作与回滚说明见 [迁移记录](docs/migration.md)。
+`web_app.py` 和 `persona_app.py` 均启动同一应用，可直接在 PyCharm 中运行。本地地址仅供本机访问；让其他用户通过网址使用，请按[部署指南](docs/deployment.md)配置服务器。
 
-## 真实模型
+### 连接真实模型
 
-普通用户页面没有 API 设置。管理员在本机隐藏输入 Key：
+先停止当前服务，再执行：
 
 ```bash
 .venv/bin/python scripts/configure_model.py
 .venv/bin/python persona_app.py
 ```
 
-配置工具写入 Git 忽略的 `.env`，权限为0600，不打印 Key，不调用模型。GLM、OpenAI 或其他兼容服务使用对应的模型、Base URL、协议和 Key。可以重复运行更换 Key。也可以使用 `zsh run-api.sh` 临时输入 GLM Key，它只留在进程环境中。
+按提示选择 `glm`、`openai` 或 `custom`，填写模型 ID、Base URL 和 API Key。配置工具使用 Chat Completions 协议；其他协议配置见[部署指南](docs/deployment.md)。重复运行即可更换服务商或 Key。
 
-上线前必须在 `.env` / 托管平台填入当前服务商价格与全站预算，使用自己有权用于该产品的凭据。默认每用户每天40次、全站每天200次模型 HTTP 尝试，还受每日预算限制；所有重试均计数，跨进程和重启不重置。普通聊天将意图判断和直接回答合并为一个模型阶段；知识解释、用户明确请求的搜索、详细报告和演练按需执行，可能包含更多调用。异常重试也会额外计数。预算是本应用的保守预约额度，**不是服务商账户余额或账单保证**；搜索服务可能另行收费。
+Key 在终端隐藏输入，保存到 Git 忽略的 `.env`，文件权限限制为当前用户读写。配置步骤本身不调用模型；接入后发送问题会产生服务商费用。网页用户无需填写管理员的 Key。
 
-## 用户闭环
+### 上传聊天记录与 PDF
 
-1. 登录，点击左栏紫色 `＋ 添加人物`，填写昵称和可选资料。
-2. 点击“聊聊这个人”，或在聊天中提到其已登记昵称／别名。
-3. 普通聊天结合人物记忆和历史，直接回答当前问题；用户需要知识解释、明确要求研究来源、详细报告或演练时，才进入对应工作流。
-4. 明确的人物陈述可形成待确认卡片；确认前不用于跨会话记忆。用户可把它归为经历、感受或印象。
-5. 新对话检索同一账号下该人物的已确认记录。多人或代词指代不清时先澄清。
-6. 用户纠正记忆后，旧上下文失效。删除人物或事件会清理涉及该人物的相关对话，避免旧结果重新成为上下文；操作前明确提示。
-7. 用户可评价回复、导出数据、删除对话和注销账号。
+输入框旁点击“上传附件” → 预览并勾选文件 → 选择相关人物 → 输入具体问题。
 
-## 工程范围与取舍
+- 支持 UTF-8 TXT 和文字型 PDF；单份不超过 2 MB、PDF 不超过 40 页、提取文字不超过 10 万字符，每次最多选择 3 份。
+- 回答提供文件名、页码／行号和逐字引用。附件中的内容经用户确认后，才写入人物记忆。
+- 上传本身不调用模型；API 模式下发送分析问题才使用模型额度。
+- 长文件检索相关片段，并显示覆盖范围；不将局部阅读当作全文分析。目前不支持截图、扫描 PDF 或自动读取微信。
 
-- 一个主 Agent，以自然对话为默认路径；保留按需、可恢复的专门工作流，不声称多个自主 Agent 已实现。
-- 人物档案、连续对话、回复建议和可纠正记忆为核心；来源与报告折叠展示，Trace 留在运行详情中。不会用同理心关键词检查把正常建议替换成固定安慰话。
-- 人物识别使用已登记昵称／别名及用户选择；陌生人物不会被悄悄创建。
-- 人物检索先做账号和人物过滤，再用词项相关度与时间排序；**目前不是向量检索**。
-- 人物资料、用户经历、用户感受／印象、模型推测和演练保持不同来源；星座仅作为资料，不用于行为预测。
-- SQLAlchemy 支持 SQLite 本地开发和 PostgreSQL 部署，生产配置强制 PostgreSQL、HTTPS、邀请码与真实模型配置。
-- 不透明 HttpOnly 会话 Cookie、哈希凭据、Origin/CSRF 检查、登录限流；每个 API 对资源归属再次校验。
-- 持久任务队列、租约、检查点、幂等提交。不同会话可并行，同一会话只允许一个活跃任务。进程崩溃后租约过期的任务显式失败，用户可恢复。
-- 删除/编辑时阻止与运行中的任务竞态。修改记忆后排除旧上下文是保守实现，会暂时减少近期聊天连续性。
-- 学术检索保留 Google Scholar/SerpAPI、Semantic Scholar、OpenAlex 适配，引用校验沿用现有实现；已知人物名在外发搜索前再次清理。没有虚构“已读全文”。
-- 中文/英文提示与 UI；小范围规则预检高风险输入，所有模型分支保留安全提示。规则不能覆盖所有表达，必须补充真实模型评测。
-- 按人物限定的只读 MCP、加密备份/恢复、脱敏统计、明确同意后才可通过反馈审阅对话。
+存储、引用校验和删除范围见[附件说明](docs/attachments.md)。
 
-## 测试和评测
+## Harness 设计
 
-当前本地验证、测试范围与发布门槛见 [verification.md](docs/verification.md)。旧提交的 CI 成功不能代表本次重构通过 CI；真实模型与真人反馈仍待完成。
+对于开发者，这个项目展示了如何把人物记忆、按需工具和可靠执行组织成一个可交互的 Agent 应用。**Harness 是围绕模型的运行层**，负责上下文、任务执行、校验、恢复与成本控制。
+
+```text
+用户消息 / 选中的附件
+        ↓
+账号与资源权限校验 → 人物识别、已确认记忆、历史与附件片段
+        ↓
+主 Agent：普通对话直接回答；按需进入搜索、报告或演练
+        ↓
+阶段执行 → 输出与来源校验 → 保存结果 → 页面展示
+        ↓
+用户反馈 / 确认或纠正记忆 → 后续对话
+
+贯穿执行：持久队列 · 检查点 · Trace · 请求限额与预算
+```
+
+| 工程能力 | 实现与取舍 |
+| --- | --- |
+| **可控的人物记忆** | 按账号和人物限定检索，区分经历、感受／印象、模型推测与演练。确认后才用于跨会话人物记忆。检索使用词项相关度和时间排序。 |
+| **按需执行** | 一个主 Agent 配合专门工作流。普通聊天将意图选择与直接回答合并为一个模型阶段，避免每次都走完整报告流程。 |
+| **可核对的附件分析** | 限制解析资源与上下文长度，校验引用是否来自选中的原文，展示检索覆盖范围。 |
+| **任务恢复与追踪** | 持久队列、租约、阶段检查点、幂等提交与 Trace。同一会话只允许一个活跃任务，不同会话可并行；租约过期后任务显式失败，可由用户恢复。 |
+| **模型适配与成本控制** | 模型、接口协议和凭据独立配置，每次实际 HTTP 尝试及重试均计数，配合持久限额与预算预约。 |
+| **多用户数据边界** | 服务端逐资源检查归属、HttpOnly 会话 Cookie、密码哈希、Origin/CSRF 检查与登录限流；SQLite 用于本地，PostgreSQL 用于生产部署。 |
+| **工具与扩展** | Google Scholar/SerpAPI、Semantic Scholar、OpenAlex 学术适配；可选的只读 MCP 限定一个账号和一个人物。 |
+
+设计边界：当前采用词项检索，不是向量检索；人物档案不是独立自主 Agent。纠正记忆会使旧上下文失效；部分删除操作会连带清理相关对话，以免旧信息再次被使用，页面会在操作前说明范围。详见[产品与架构](docs/persona-architecture.md)。
+
+## 开发与评测
+
+安装开发依赖并运行检查：
 
 ```bash
+.venv/bin/pip install -e '.[test,dev]'
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 .venv/bin/python evals/persona_eval.py
+.venv/bin/python scripts/verify.py --package
+```
+
+浏览器自动验收需先安装 Chromium：
+
+```bash
+.venv/bin/python -m playwright install chromium
 .venv/bin/python scripts/verify.py --browser --package
 ```
 
-40个中英文多轮案例，比较有／无人物记忆；默认全部Mock，不花模型额度。真实模型小额联调示例：
+评测包含 **40 个中英文合成多轮场景**，比较有／无人物记忆。默认使用 Mock，不消耗模型额度，用于验证流程和约束。真实模型回答质量需另外人工评审，不能用 Mock 通过率代替。
+
+2026-11-08 的本地验证记录包含 122 项回归、8 个结构案例和 160 轮 Mock，以及一次真实模型附件联调；检查范围与限制见[验收记录](docs/verification.md)，这些记录不代表任意后续提交都已通过验证。
+
+小额真实模型评测示例：
 
 ```bash
 .venv/bin/python evals/persona_eval.py --mode api --limit 1 --max-calls 8 --output outputs/live-persona-eval.json
 ```
 
-调用上限覆盖整个进程、两种变体、路由与修复尝试。达到上限会记录失败而不是无限重试。阅读实际回复、填写人工评分后才可发布质量结论。不要提交真实用户输出。
+调用上限覆盖整个进程的两种记忆条件与重试；达到上限会记录失败，不会无限重试。请用合成或获得授权的数据评测，勿提交真实用户输出。
 
-## 可选开发扩展：MCP
+### 从哪里读代码
 
-暂不作为面向用户的核心功能，也不会随网页服务自动启动。
+```text
+persona_app.py / web_app.py          应用入口
+src/relationship_agent/
+  persona_web/                      HTML / CSS / JavaScript 界面
+  beta/app.py                       FastAPI、认证与资源接口
+  beta/service.py                   人物上下文、任务队列与预算
+  beta/store.py                     用户隔离、人物与事件记忆
+  beta/database.py                  SQLite / PostgreSQL 数据表与事务
+  beta/attachments.py               附件归属、存储与记忆确认
+  attachments.py                    TXT / PDF 提取与片段检索
+  prompts.py                        各阶段提示词
+  engine.py                         工作流、阶段执行与检查点
+  schemas.py                        输出结构与来源校验
+  providers.py                      模型协议适配与请求计量
+  beta/ops.py                       统计、加密备份恢复与反馈审阅
+  beta/mcp_server.py                人物范围内的只读 MCP
+  beta/auth.py                      密码与会话管理
+evals/persona_cases.py               多轮评测场景
+```
 
-仅由本机操作者主动启动、限定一个账号和一个人物，不对公网暴露：
+想调整回答风格，从 `prompts.py` 开始；想理解消息如何执行，从 `beta/service.py` 与 `engine.py` 开始。完整路径见[代码阅读顺序](docs/code-reading-guide.md)和[维护指南](docs/maintenance.md)。
+
+欢迎通过 Issue 提交脱敏的复现步骤、预期与实际行为；涉及回答质量时，请说明模型和相关配置，不要附 API Key 或私人聊天记录。新功能建议同时给出用户场景和验收方式。
+
+### 可选：只读 MCP
 
 ```bash
+.venv/bin/pip install -e '.[mcp]'
 .venv/bin/python -m relationship_agent.beta.mcp_server --username YOUR_USERNAME --person-id PERSON_ID
 ```
 
-工具：`get_person_profile`、`search_person_events`。它们只读，返回来源标签，不返回其他人物或未经确认的记忆。Host 会获得这个人物的数据，启用前需了解这一点。
+提供 `get_person_profile`、`search_person_events` 两个工具，只返回指定人物的档案和已确认记录。由本机操作者主动启动，不随网页服务启动；连接它的 Host 会取得该人物的数据。
 
-## 部署与运营
+## 部署与数据管理
 
-提供 Dockerfile、PostgreSQL/Caddy Compose、Render Blueprint、PostgreSQL CI、数据库备份和恢复工具。它们是部署材料，**不等于已经上线**。域名、托管账号、模型配置、备份存储与真实用户反馈仍需实际接通并验收。
+仓库提供 Dockerfile、PostgreSQL/Caddy Compose、Render Blueprint，以及加密备份和恢复工具。公网启动要求 PostgreSQL、HTTPS、邀请码、真实模型配置及其他生产检查项。完整步骤见[部署指南](docs/deployment.md)，发布验收项见[发布清单](docs/release-status.md)。
 
-开发模式仅允许监听本机；公开服务必须满足生产配置检查。不要提交 `.env`、私人数据库、备份、聊天记录或报告。部署详见 [deployment.md](docs/deployment.md)。
+- 默认每用户每天 40 次、全站每天 200 次模型 HTTP 尝试，包含重试；可通过配置调整，并受每日预算限制。
+- 按服务商价格配置预算。应用的预算预约不等于服务商余额或最终账单，搜索服务可能另行收费。
+- 真实模型运行时，所需的对话、人物上下文和选中的附件片段会发送给配置的模型服务商。部署者需说明数据处理方式与隐私联系渠道。
+- 不要提交 `.env`、私人数据库、聊天记录、备份或真实评测输出。公开服务使用独立的生产数据库。
+- 数据和旧版本入口的迁移方式见[迁移记录](docs/migration.md)。
 
-## 代码地图
+## 设计参考
 
-```text
-web_app.py / persona_app.py       新版入口
-src/relationship_agent/beta/
-  app.py                          FastAPI、登录与资源接口
-  auth.py                         密码哈希、会话、登录限流
-  database.py                     新数据库 schema v1 与事务
-  store.py                        用户隔离、人物与事件、引擎存储适配
-  service.py                      意图与人物上下文、队列、租约、预算
-  ops.py                          脱敏指标、加密备份恢复、反馈审阅
-  mcp_server.py                   账号+人物限定的只读 MCP
-src/relationship_agent/persona_web/  新版 HTML/CSS/JS
-src/relationship_agent/prompts.py    各阶段提示词（回答方式与意图）
-src/relationship_agent/schemas.py    输出结构与来源校验
-src/relationship_agent/engine.py     复用的阶段执行与检查点
-src/relationship_agent/providers.py  多协议模型适配与逐请求计量钩子
-evals/persona_cases.py               40个合成多轮场景
-```
-
-本项目独立开发。记忆分层受 Generative Agents 思路启发，没有复现其虚拟小镇。
+本项目独立开发。记忆分层受 [Generative Agents](https://arxiv.org/abs/2304.03442) 的思路启发，应用于人物经历与持续对话，没有复现其虚拟小镇。

@@ -118,7 +118,32 @@ class RelationshipAgent:
                             {"document_ids": [d["id"] for d in state["retrieved"]]},
                         )
                 self.store.checkpoint(run_id, state)
-            if run["kind"] == "evidence":
+            if run["kind"] == "attachment":
+                context = state["attachment_context"]
+                response = stage(
+                    "attachment_chat",
+                    {
+                        "user_message": message,
+                        "conversation": state["conversation"],
+                        "observations": state["context"],
+                        **context,
+                    },
+                )
+                by_id = {s["source_id"]: s for s in context["excerpts"]}
+                result = {
+                    "kind": "chat",
+                    "reply": response["reply"],
+                    "attachment_coverage": context["coverage"],
+                    "attachment_sources": [
+                        {**by_id[s["source_id"]], "quote": s["quote"]}
+                        for s in response["citations"]
+                    ],
+                }
+                records = [
+                    ("observation", "attachment_excerpts", context),
+                    ("inference", "attachment_answer", response),
+                ]
+            elif run["kind"] == "evidence":
                 state["context"] = []
                 query = stage(
                     "academic_query",

@@ -312,6 +312,14 @@
         </div>
         <div class="composer-wrap">
           <div class="composer">
+            <!-- 文件只预览文字；明确选择附件后，下一次发送才把相关片段交给模型。 -->
+            <div id="attachment-list" aria-live="polite"></div>
+            <input
+              id="attachment-input"
+              type="file"
+              accept=".txt,.pdf"
+              hidden
+            />
             <label class="person-select"
               ><span data-i18n="focus">正在聊</span
               ><select
@@ -326,10 +334,21 @@
               aria-label="消息"
             ></textarea>
             <div class="composer-bottom">
+              <button
+                id="upload-file"
+                type="button"
+                class="text-button"
+                data-i18n="upload"
+              >
+                上传附件
+              </button>
               <span data-i18n="inputHint">Enter 发送 · Shift + Enter 换行</span
               ><button id="send" class="send" aria-label="发送消息">↑</button>
             </div>
           </div>
+          <p class="attachment-hint" data-i18n="uploadHint">
+            TXT / 文字 PDF · 每份 ≤2 MB · 勾选后用于本次提问
+          </p>
           <p id="status" role="status"></p>
           <p class="disclaimer" data-i18n="disclaimer">
             理解需要时间。AI 的推测不代表对方真实想法，你可以随时纠正记忆。
@@ -374,6 +393,11 @@
       </aside>
     </div>
     <!-- 表单 name 是提交字段名；改名时同步检查 app.js 与后端校验。 -->
+    <dialog id="attachment-dialog">
+      <h2 id="attachment-title"></h2>
+      <pre id="attachment-preview"></pre>
+      <button type="button" data-close="attachment-dialog">关闭 / Close</button>
+    </dialog>
     <dialog id="person-dialog">
       <form id="person-form">
         <div class="panel-heading">

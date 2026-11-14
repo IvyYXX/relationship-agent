@@ -17,6 +17,7 @@ class ContractError(ValueError):
 
 # 模板只规定形状；例如空字符串不是默认回答，不能直接当作成功结果。
 SCHEMAS = {
+    "attachment_chat": {"reply": "", "citations": [{"source_id": "", "quote": ""}]},
     "respond": {"intent": "chat", "reason": "", "reply": ""},
     "route": {"intent": "chat", "reason": ""},
     "academic_query": {"query": ""},
@@ -97,6 +98,19 @@ def validate_stage(stage, value, payload):
     if len(json.dumps(value, ensure_ascii=False)) > 16000:
         raise ContractError("Stage output exceeded 16000 characters")
     validate(value, SCHEMAS[stage])
+    if stage == "attachment_chat":
+        sources = {s["source_id"]: s for s in payload["excerpts"]}
+        if not value["reply"].strip() or not value["citations"]:
+            raise ContractError("Attachment answers require a reply and source quotes")
+        for citation in value["citations"]:
+            source = sources.get(citation["source_id"])
+            if (
+                not source
+                or not citation["quote"].strip()
+                or len(citation["quote"]) > 600
+                or citation["quote"] not in source["text"]
+            ):
+                raise ContractError("Attachment citation must quote a supplied excerpt")
     # 意图必须属于显式集合；模型输出不能直接变成任意工具名或数据库操作。
     if stage in {"route", "respond"}:
         if value["intent"] not in {

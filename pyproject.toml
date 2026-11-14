@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "relationship-agent"
-version = "0.3.0"
+version = "0.4.0"
 description = "Persona AI: person-aware relationship memory with a checkpointed agent harness"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["fastapi==0.142.2", "sqlalchemy==2.0.54", "psycopg[binary]==3.3.6", "uvicorn==0.53.0", "python-dotenv==1.2.3", "cryptography==50.0.1"]
+dependencies = ["fastapi==0.142.2", "sqlalchemy==2.0.54", "psycopg[binary]==3.3.6", "uvicorn==0.53.0", "python-dotenv==1.2.3", "cryptography==50.0.1", "pypdf==7.0.0"]
 
 # 运行时依赖在上方；开发检查、MCP、测试工具按需安装，减少正式服务的依赖面。
 [project.optional-dependencies]

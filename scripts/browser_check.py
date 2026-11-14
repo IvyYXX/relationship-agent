@@ -148,6 +148,50 @@ def main():
                 )
                 expect(rehearsal).to_be_visible(timeout=10000)
                 assert rehearsal.evaluate("el => el.open")
+                # 验证附件从上传到确认记忆的真实界面闭环，不触发付费模型。
+                page.locator("#new-chat").click()
+                page.locator("#focus-person").select_option(label="小林")
+                page.locator("#attachment-input").set_input_files(
+                    {
+                        "name": "synthetic-chat.txt",
+                        "mimeType": "text/plain",
+                        "buffer": "小林：周五有空，一起喝咖啡？\n我：可以，下午见。".encode(),
+                    }
+                )
+                expect(page.locator("#attachment-list")).to_contain_text(
+                    "synthetic-chat.txt"
+                )
+                expect(page.locator("#send")).to_be_enabled()
+                page.get_by_role("button", name="附件预览", exact=True).click()
+                expect(page.locator("#attachment-preview")).to_contain_text("周五")
+                page.locator('[data-close="attachment-dialog"]').click()
+                page.locator("#message-input").fill("小林的这句话怎么回复？")
+                page.locator("#message-input").press("Enter")
+                evidence = page.locator("#messages details").filter(
+                    has=page.locator("summary", has_text="附件依据")
+                )
+                expect(evidence).to_be_visible(timeout=10000)
+                evidence.locator("summary").click()
+                expect(evidence).to_contain_text("周五")
+                evidence.get_by_role(
+                    "button", name="确认记入人物", exact=True
+                ).first.click()
+                expect(page.locator("#event-source")).to_contain_text("周五")
+                page.locator("#event-form button[type=submit]").click()
+                expect(page.locator("#event-dialog")).to_be_hidden()
+                page.reload()
+                expect(page.locator("#attachment-list")).to_contain_text(
+                    "synthetic-chat.txt"
+                )
+                expect(
+                    page.locator('#attachment-list input[type="checkbox"]')
+                ).not_to_be_checked()
+                page.screenshot(
+                    path=str(args.output_dir / "persona-attachments.png"),
+                    full_page=True,
+                )
+                page.locator("#new-chat").click()
+                expect(page.locator("#attachment-list")).to_be_empty()
                 page.locator("#language").click()
                 expect(page.locator("#new-chat")).to_contain_text("New chat")
                 page.screenshot(

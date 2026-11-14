@@ -8,6 +8,23 @@ const $ = (id) => document.getElementById(id);
 // 文案键与 HTML 的 data-i18n 属性对应；不要直接用翻译后的文字作为业务判断条件。
 const strings = {
   zh: {
+    upload: "上传附件",
+    uploadHint: "TXT / 文字 PDF · 每份 ≤2 MB · 勾选后用于本次提问",
+    uploading: "正在读取附件…",
+    filePreview: "附件预览",
+    fileDelete: "删除附件",
+    fileDeleteWarn:
+      "删除附件会同时删除所在会话、该会话的其他附件及来源记忆，避免旧回答继续引用。确定删除？",
+    fileSources: "附件依据",
+    fileMemory: "确认记入人物",
+    filePartial: "仅选取部分文字，不能代表全文结论",
+    fileFull: "已提供全部提取文字（不包含图片）",
+    fileChoose: "最多勾选 3 个附件",
+    fileQuestion: "附件已准备好。你想了解什么？请在输入框说明。",
+    fileScope: "读取范围",
+    fileEmpty: "请选择 TXT 或文字型 PDF，单份不超过 2 MB。",
+    fileBlank: "部分页面没有可提取文字，图片未被读取。",
+
     startConversation: "开始对话",
     discover: "向下探索",
     peopleHeadline: "每个人，单独记得。",
@@ -150,6 +167,24 @@ const strings = {
     memorySaved: "记忆已更新；此前对话仍可回看，但不会作为新的模型上下文。",
   },
   en: {
+    upload: "Attach file",
+    uploadHint: "TXT / text PDF · ≤2 MB each · Select files for this question",
+    uploading: "Reading attachment…",
+    filePreview: "Attachment preview",
+    fileDelete: "Delete file",
+    fileDeleteWarn:
+      "Deleting this file also deletes its conversation, other files in that conversation and sourced memories so old answers cannot reuse it. Continue?",
+    fileSources: "Attachment evidence",
+    fileMemory: "Confirm as person memory",
+    filePartial: "Selected text only; not a whole-document conclusion",
+    fileFull: "All extracted text supplied (images not read)",
+    fileChoose: "Select up to 3 files",
+    fileQuestion:
+      "Attachment ready. What would you like to understand? Add a question below.",
+    fileScope: "Reading scope",
+    fileEmpty: "Choose TXT or text PDF, up to 2 MB.",
+    fileBlank: "Some pages contain no extractable text. Images were not read.",
+
     startConversation: "Start a conversation",
     discover: "Explore below",
     peopleHeadline: "Each person. Their own story.",
@@ -325,6 +360,9 @@ let csrf = "",
   generation = 0,
   sending = false,
   pendingSend = null;
+let files = [],
+  selectedFiles = new Set(),
+  uploading = false;
 const t = (key) => strings[lang][key] || key;
 // 所有用户文字和模型回复都走 textContent，避免被浏览器当作 HTML 或脚本执行。
 function node(tag, text, cls) {
@@ -391,6 +429,7 @@ function translate() {
     .forEach((n) => n.setAttribute("aria-label", t(n.dataset.i18nLabel)));
   authLabels();
   renderLists();
+  renderFiles();
   renderChat();
   if (session) $("chat-title").textContent = session.title;
   $("send").setAttribute(
@@ -439,6 +478,9 @@ function showAuth() {
   me = null;
   csrf = "";
   session = null;
+  files = [];
+  selectedFiles.clear();
+  renderFiles();
   jobs = [];
   people = [];
   sessions = [];
@@ -523,6 +565,9 @@ function newChat() {
   clearTimeout(timer);
   generation++;
   session = null;
+  files = [];
+  selectedFiles.clear();
+  renderFiles();
   jobs = [];
   pendingSend = null;
   localStorage.removeItem("persona.session");
@@ -543,7 +588,15 @@ async function loadSession(id) {
   const gen = ++generation;
   const result = await api("/api/sessions/" + id);
   if (gen !== generation) return;
+  const sameSession = session?.id === id;
   session = result.session;
+  files = result.attachments || [];
+  selectedFiles = new Set(
+    sameSession
+      ? [...selectedFiles].filter((x) => files.some((f) => f.id === x))
+      : [],
+  );
+  renderFiles();
   jobs = result.runs;
   pendingSend = null;
   $("chat-title").textContent = session.title;
@@ -602,6 +655,47 @@ function renderChat() {
             "text-button",
           ),
         );
+      if (result.attachment_coverage) {
+        const coverage = node("div", undefined, "attachment-coverage");
+        for (const f of result.attachment_coverage)
+          coverage.append(
+            node(
+              "p",
+              `${f.name} · ${f.selected_blocks}/${f.total_blocks} · ${t(f.partial ? "filePartial" : "fileFull")}`,
+            ),
+          );
+        reply.append(coverage);
+        const sources = node("details");
+        sources.append(node("summary", t("fileSources")));
+        for (const source of result.attachment_sources || []) {
+          const card = node("div", undefined, "attachment-source");
+          card.append(
+            node(
+              "small",
+              `${source.name} · ${source.page ? (lang === "zh" ? "第 " + source.page + " 页 · " : "page " + source.page + " · ") : ""}${lang === "zh" ? "第 " : "line "}${source.line}${lang === "zh" ? " 行" : ""}`,
+            ),
+            node("blockquote", source.quote),
+          );
+          if (run.person_ids?.length === 1 && !result.attachment_memory_saved)
+            card.append(
+              button(
+                t("fileMemory"),
+                () =>
+                  openEvent(run.person_ids[0], {
+                    attachment: true,
+                    rid: run.id,
+                    source_id: source.source_id,
+                    quote: source.quote,
+                    text: source.quote,
+                    kind: "account",
+                  }),
+                "text-button",
+              ),
+            );
+          sources.append(card);
+        }
+        reply.append(sources);
+      }
       if (result.sources?.length) {
         const sources = node("details", undefined, "sources");
         sources.append(node("summary", t("sources")));
@@ -690,8 +784,11 @@ function renderChat() {
     root.append(reply);
   }
   $("send").disabled =
-    sending || jobs.some((r) => ["queued", "running"].includes(r.status));
+    uploading ||
+    sending ||
+    jobs.some((r) => ["queued", "running"].includes(r.status));
   $("focus-person").disabled = $("send").disabled;
+  $("upload-file").disabled = $("send").disabled;
 }
 // 复杂报告和演练保留独立渲染，不把假设中的对话伪装成真实聊天历史。
 function analysis(r) {
@@ -768,7 +865,11 @@ async function poll(id, gen, attempt = 0) {
 }
 /** Keep one idempotency key per pending send so network retries cannot double-submit. */
 async function send() {
-  if (sending || jobs.some((r) => ["queued", "running"].includes(r.status)))
+  if (
+    uploading ||
+    sending ||
+    jobs.some((r) => ["queued", "running"].includes(r.status))
+  )
     return;
   const message = $("message-input").value.trim();
   if (!message) return;
@@ -794,12 +895,15 @@ async function send() {
       !pendingSend ||
       pendingSend.session_id !== session.id ||
       pendingSend.message !== message ||
-      pendingSend.person_id !== focus
+      pendingSend.person_id !== focus ||
+      JSON.stringify(pendingSend.attachment_ids || []) !==
+        JSON.stringify([...selectedFiles].sort())
     )
       pendingSend = {
         session_id: session.id,
         message,
         person_id: focus,
+        attachment_ids: [...selectedFiles].sort(),
         idempotency_key: crypto.randomUUID(),
       };
     // POST 返回任务 ID，代表已受理；实际回答由 worker 生成，再通过 poll 读取。
@@ -957,11 +1061,21 @@ $("event-form").onsubmit = async (e) => {
   e.preventDefault();
   try {
     const { pid, event } = eventEdit;
-    await api(
-      `/api/people/${pid}/events${event ? "/" + event.id : ""}`,
-      event ? "PATCH" : "POST",
-      { ...Object.fromEntries(new FormData(e.target)), status: "confirmed" },
-    );
+    if (event?.attachment) {
+      const form = Object.fromEntries(new FormData(e.target));
+      await api(`/api/runs/${event.rid}/attachment-memory`, "POST", {
+        person_id: pid,
+        source_id: event.source_id,
+        quote: event.quote,
+        text: form.text,
+        kind: form.kind,
+      });
+    } else
+      await api(
+        `/api/people/${pid}/events${event ? "/" + event.id : ""}`,
+        event ? "PATCH" : "POST",
+        { ...Object.fromEntries(new FormData(e.target)), status: "confirmed" },
+      );
     $("event-dialog").close();
     if (session) await loadSession(session.id);
     if (panelId) await openPerson(panelId);
@@ -997,10 +1111,10 @@ function privacy() {
     lang === "zh"
       ? [
           "Persona AI 是关系交流与沟通练习工具，不提供医疗诊断，也不能预测真人的内心或未来。",
-          "会话、人物资料、已确认记忆与必要执行记录保存在服务数据库中。人物使用昵称即可。原始聊天默认不用于公开展示或模型训练。",
+          "会话、人物资料、已确认记忆、上传的原文件及提取文字保存在服务数据库中。人物使用昵称即可。原始聊天默认不用于公开展示或模型训练。",
           config.mode === "mock"
             ? "当前为本机演示：不调用外部模型。"
-            : `当前模型服务：${config.provider}。发送消息会把本次输入、相关人物资料和有限历史发送给该服务商，其数据处理规则同时适用。`,
+            : `当前模型服务：${config.provider}。发送消息会把本次输入、相关人物资料、有限历史及本次勾选附件的相关文字发送给该服务商，其数据处理规则同时适用。`,
           "你要求资料来源时，会把研究主题词发送到已配置的学术搜索服务。系统会过滤已知人物姓名、邮箱等常见身份信息；请勿在搜索请求中填写敏感身份资料。不会主动抓取你的其他账号或通讯录。",
           "你可以导出数据、删除人物、会话或账号。为防止旧信息再进入模型，删除人物或事件会清理涉及该人物的相关对话；修改记忆会停止使用旧上下文。",
           "数据删除覆盖当前数据库。备份最多保留7天，上线运营者需要执行对应清理。模型服务商的数据保留遵循其政策，本站无法替其立即删除。",
@@ -1009,10 +1123,10 @@ function privacy() {
         ]
       : [
           "Persona AI supports relationship reflection and communication practice. It does not diagnose people or predict their thoughts or future.",
-          "Chats, profiles, confirmed memories and necessary execution records are stored in the service database. Nicknames are sufficient. Private chats are not used for public demos or model training by default.",
+          "Chats, profiles, confirmed memories, original uploaded files and extracted text are stored in the service database. Nicknames are sufficient. Private chats are not used for public demos or model training by default.",
           config.mode === "mock"
             ? "Local demo: no external model requests."
-            : `Model provider: ${config.provider}. Your message, relevant person records and bounded history are sent to this provider, whose data policies also apply.`,
+            : `Model provider: ${config.provider}. Your message, relevant person records, bounded history and text from selected attachments are sent to this provider, whose data policies also apply.`,
           "When you request sources, a topic query is sent to configured academic search providers. Known person names and common identifiers are filtered; please omit sensitive identifying details from search requests. We do not access your contacts or other accounts.",
           "You can export or delete your data. Deleting people or events removes related conversations to prevent reuse. Correcting memories excludes older context from future requests.",
           "Deletion covers the active database. Backups have a maximum 7-day retention policy, which the deployment operator must enforce. Model-provider retention policies apply separately.",
@@ -1093,6 +1207,125 @@ for (const b of document.querySelectorAll("[data-prompt]"))
           : "Help me find the words to reply to someone I care about.";
     $("message-input").focus();
   };
+/** Attachments belong to one session. Selection is explicit and never follows a different chat. */
+function renderFiles() {
+  const root = $("attachment-list");
+  root.replaceChildren();
+  for (const file of files) {
+    const row = node("div", undefined, "attachment-row");
+    const label = node("label"),
+      check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = selectedFiles.has(file.id);
+    check.setAttribute("aria-label", file.name);
+    check.onchange = () => {
+      if (check.checked && selectedFiles.size >= 3) {
+        check.checked = false;
+        status(t("fileChoose"));
+        return;
+      }
+      if (check.checked) selectedFiles.add(file.id);
+      else selectedFiles.delete(file.id);
+      pendingSend = null;
+    };
+    label.append(check, node("span", file.name));
+    row.append(
+      label,
+      button(
+        t("filePreview"),
+        async () => {
+          const gen = generation;
+          const data = await api("/api/attachments/" + file.id);
+          if (gen !== generation) return;
+          $("attachment-title").textContent = file.name;
+          $("attachment-preview").textContent =
+            (data.blank_pages.length ? t("fileBlank") + "\n\n" : "") +
+            data.blocks
+              .map(
+                (b) =>
+                  `${b.page ? "[p." + b.page + "] " : ""}[L${b.line}] ${b.text}`,
+              )
+              .join("\n");
+          $("attachment-dialog").showModal();
+        },
+        "text-button",
+      ),
+      button(
+        t("fileDelete"),
+        async () => {
+          if (!confirm(t("fileDeleteWarn"))) return;
+          const gen = generation;
+          await api("/api/attachments/" + file.id, "DELETE", {});
+          if (gen !== generation) return;
+          newChat();
+          await refresh();
+        },
+        "text-button danger",
+      ),
+    );
+    root.append(row);
+  }
+}
+$("upload-file").onclick = () => $("attachment-input").click();
+$("attachment-input").onchange = async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file || uploading || sending) return;
+  if (
+    !/\.(txt|pdf)$/i.test(file.name) ||
+    !file.size ||
+    file.size > 2 * 1024 * 1024
+  ) {
+    status(t("fileEmpty"));
+    return;
+  }
+  const gen = generation;
+  uploading = true;
+  renderChat();
+  status(t("uploading"));
+  try {
+    if (!session) {
+      const created = await api("/api/sessions", "POST", {
+        title: file.name.slice(0, 45),
+        language: lang,
+        person_id: $("focus-person").value || null,
+      });
+      if (gen !== generation) return;
+      session = created;
+      localStorage.setItem("persona.session", session.id);
+      $("chat-title").textContent = session.title;
+      $("delete-chat").hidden = false;
+    }
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = () => reject(Error(t("connection")));
+      reader.readAsDataURL(file);
+    });
+    if (gen !== generation) return;
+    const attachment = await api("/api/attachments", "POST", {
+      session_id: session.id,
+      name: file.name,
+      content,
+    });
+    if (gen !== generation) return;
+    files.push(attachment);
+    if (selectedFiles.size < 3) selectedFiles.add(attachment.id);
+    pendingSend = null;
+    renderFiles();
+    await refresh();
+    if (gen === generation) {
+      status(t("fileQuestion"));
+      $("message-input").focus();
+    }
+  } catch (e) {
+    if (gen === generation) showError(e);
+  } finally {
+    uploading = false;
+    renderChat();
+  }
+};
+
 /** Reveal the public story once per element; reduced motion leaves all text visible. */
 function setupLanding() {
   const motion = window.matchMedia("(prefers-reduced-motion: reduce)");

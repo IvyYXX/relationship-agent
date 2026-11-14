@@ -196,6 +196,27 @@ attempts = Table(
     Column("usage", JSON),
     Column("estimated_usd", Float),
 )
+# v2 为新增附件表，无需改动旧记录；原件不进入公开静态资源。
+attachments = Table(
+    "attachments",
+    meta,
+    idcol(),
+    owner(),
+    Column(
+        "session_id",
+        String(64),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        index=True,
+    ),
+    Column("name", String(160)),
+    Column("size", Integer),
+    Column("original", Text),
+    Column("blocks", JSON),
+    Column("pages", Integer),
+    Column("characters", Integer),
+    Column("blank_pages", JSON),
+    Column("created", Float),
+)
 locks = Table("transaction_locks", meta, Column("name", String(32), primary_key=True))
 
 
@@ -231,7 +252,7 @@ class Database:
         self.migrate()
 
     def migrate(self):
-        """幂等创建 v1 表并拒绝较新版本；当前不执行历史列结构升级。"""
+        """幂等创建表；v1 → v2 仅新增附件表，保留旧会话，不改历史列。"""
         with self.engine.begin() as c:
             if self.engine.dialect.name == "postgresql":
                 from sqlalchemy import text
@@ -240,10 +261,10 @@ class Database:
                 c.execute(text("SELECT pg_advisory_xact_lock(73918421)"))
             meta.create_all(c)
             current = c.execute(select(versions.c.version)).scalars().all()
-            if current and max(current) > 1:
+            if current and max(current) > 2:
                 raise RuntimeError("Database is newer than this application")
-            if not current:
-                c.execute(insert(versions).values(version=1))
+            if 2 not in current:
+                c.execute(insert(versions).values(version=2))
             if not c.execute(select(locks).where(locks.c.name == "write")).first():
                 c.execute(insert(locks).values(name="write"))
 

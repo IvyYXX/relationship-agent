@@ -53,7 +53,26 @@ class Message(Payload):
     session_id: str = Field(max_length=64)
     message: str = Field(min_length=1, max_length=6000)
     person_id: str | None = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=3)
     idempotency_key: str = Field(min_length=16, max_length=64)
+
+
+class AttachmentInput(Payload):
+    """小附件 base64 传输，服务端另行验证真实格式、大小与归属。"""
+
+    session_id: str = Field(max_length=64)
+    name: str = Field(min_length=1, max_length=160)
+    content: str = Field(max_length=2800000)
+
+
+class AttachmentMemory(Payload):
+    """将已引用的原文手动确认到本次人物，保留出处而非模型推测。"""
+
+    person_id: str = Field(max_length=64)
+    source_id: str = Field(max_length=100)
+    quote: str = Field(min_length=1, max_length=600)
+    text: str = Field(min_length=1, max_length=3000)
+    kind: str = "account"
 
 
 class Person(Payload):
@@ -151,7 +170,13 @@ def create_app(settings=None, client_factory=None, start_workers=True):
             size = 0
             async for chunk in request.stream():
                 size += len(chunk)
-                if size > 40000:
+                limit = (
+                    2900000
+                    if request.url.path == "/api/attachments"
+                    and request.method == "POST"
+                    else 40000
+                )
+                if size > limit:
                     return JSONResponse({"error": "Request too large"}, 413)
                 chunks.append(chunk)
             request._body = b"".join(chunks)
@@ -357,7 +382,10 @@ def create_app(settings=None, client_factory=None, start_workers=True):
     def get_session(sid: str, user=Depends(current)):
         s = store(user)
         session = s.session(sid)
+        from .attachments import AttachmentStore
+
         return {
+            "attachments": AttachmentStore(db, user["user_id"]).list(sid),
             "session": session,
             "runs": [service.public_run(user["user_id"], r["id"]) for r in s.runs(sid)],
         }
@@ -366,6 +394,41 @@ def create_app(settings=None, client_factory=None, start_workers=True):
     def remove_session(sid: str, user=Depends(current)):
         store(user).delete_session(sid)
         return {"ok": True}
+
+    @app.post("/api/attachments", status_code=201)
+    def upload_attachment(payload: AttachmentInput, user=Depends(current)):
+        """解析文件并返回预览元数据；上传不调用模型。"""
+        from .attachments import AttachmentStore
+
+        return AttachmentStore(db, user["user_id"]).add(
+            payload.session_id, payload.name, payload.content
+        )
+
+    @app.get("/api/attachments/{aid}")
+    def attachment_preview(aid: str, user=Depends(current)):
+        """只显示提取文本，不在浏览器嵌入可执行 PDF 内容。"""
+        from .attachments import AttachmentStore
+
+        files = AttachmentStore(db, user["user_id"])
+        row = files.get(aid)
+        return {**files.public(row), "blocks": row["blocks"]}
+
+    @app.delete("/api/attachments/{aid}")
+    def remove_attachment(aid: str, user=Depends(current)):
+        """删除来源会话与派生结果；前端操作前明确提示删除范围。"""
+        from .attachments import AttachmentStore
+
+        AttachmentStore(db, user["user_id"]).delete(aid)
+        return {"ok": True}
+
+    @app.post("/api/runs/{rid}/attachment-memory")
+    def confirm_attachment_memory(
+        rid: str, payload: AttachmentMemory, user=Depends(current)
+    ):
+        """明确确认是唯一从附件写入人物记忆的入口。"""
+        from .attachments import AttachmentStore
+
+        return AttachmentStore(db, user["user_id"]).confirm(rid, **payload.model_dump())
 
     @app.post("/api/message", status_code=202)
     def message(payload: Message, user=Depends(current)):
@@ -377,6 +440,7 @@ def create_app(settings=None, client_factory=None, start_workers=True):
                 payload.message,
                 payload.person_id,
                 payload.idempotency_key,
+                payload.attachment_ids,
             )
         }
 

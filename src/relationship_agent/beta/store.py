@@ -436,6 +436,12 @@ class ScopedStore:
                 raise Busy("最多同时提交3个任务 / Too many active requests")
             for pid in self.person_ids:
                 self.own(c, people, pid)
+            from .database import attachments
+
+            for aid in (state or {}).get("attachment_ids", []):
+                attachment = self.own(c, attachments, aid)
+                if attachment["session_id"] != sid:
+                    raise ValueError("Attachment session mismatch")
             # 准备上下文与入队之间可能发生纠错；版本不一致时宁可让用户重发。
             if (state or {}).get("context_epoch", self.epoch(c)) != self.epoch(c):
                 raise Busy(
@@ -572,6 +578,7 @@ class ScopedStore:
             if (
                 len(run["person_ids"] or []) == 1
                 and result.get("kind") in ("chat", "analysis", "feedback")
+                and not result.get("attachment_coverage")
                 and not result.get("dialogue_rehearsal")
                 and not any(
                     x in run["input"]
@@ -730,6 +737,8 @@ class ScopedStore:
 
     def export(self):
         """导出当前账号业务数据，不包含密码、令牌或供应商密钥。"""
+        from .database import attachments
+
         with self.db.read() as c:
             return {
                 t.name: [
@@ -738,5 +747,5 @@ class ScopedStore:
                         select(t).where(t.c.user_id == self.user_id)
                     ).mappings()
                 ]
-                for t in (people, sessions, runs, events, feedback)
+                for t in (people, sessions, runs, events, feedback, attachments)
             }

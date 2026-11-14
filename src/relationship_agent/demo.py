@@ -19,6 +19,19 @@ class MockModelClient:
 
     def complete_json(self, stage, payload, schema=None):
         """按阶段返回固定或有限规则生成的合成结果，不进行网络调用。"""
+        if stage == "attachment_chat":
+            source = payload["excerpts"][0]
+            en = payload.get("language") == "en"
+            return {
+                "reply": (
+                    "Demo: I can reference the selected text, but this sample is not a real analysis. Please verify who said what before interpreting motives."
+                    if en
+                    else "演示：已读取选中的文字。这是流程样例，不是真实模型分析；请先确认谁说了什么，不宜仅凭一句话判断对方的动机。"
+                ),
+                "citations": [
+                    {"source_id": source["source_id"], "quote": source["text"][:180]}
+                ],
+            }
         if stage == "respond":
             from .routing import demo_route
 

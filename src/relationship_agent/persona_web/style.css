@@ -1276,3 +1276,54 @@ details h4 {
     transition: none;
   }
 }
+
+/* 附件保持在同一个输入区；长文件预览独立滚动，不挤压主聊天。 */
+.attachment-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+}
+.attachment-row label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.attachment-row label span {
+  overflow-wrap: anywhere;
+}
+.attachment-row input {
+  width: auto;
+}
+.attachment-hint,
+.attachment-coverage {
+  font-size: 12px;
+  color: #655c81;
+}
+.attachment-coverage p {
+  margin: 8px 0;
+}
+.attachment-source {
+  border-left: 2px solid #a78bca;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+#attachment-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 55vh;
+  overflow: auto;
+  font-family: inherit;
+}
+#attachment-dialog {
+  max-width: min(760px, 92vw);
+}
+
+/* 多份附件只占有限高度，避免文件列表把发送按钮挤出视口。 */
+#attachment-list {
+  max-height: 150px;
+  overflow-y: auto;
+}

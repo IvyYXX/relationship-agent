@@ -34,7 +34,7 @@ def backup(db, path, key):
     tables = [t for t in meta.sorted_tables if t not in (tokens, versions, locks)]
     with db.tx() as c:
         payload = {
-            "version": 1,
+            "version": 2,
             "created": stamp(),
             "tables": {
                 t.name: [dict(r) for r in c.execute(select(t)).mappings()]
@@ -54,7 +54,7 @@ def backup(db, path, key):
 def restore(db, path, key):
     """解密后仅恢复到空数据库，撤销令牌并将活跃任务标为失败。"""
     payload = json.loads(Fernet(key).decrypt(Path(path).read_bytes()))
-    if payload["version"] != 1:
+    if payload["version"] not in (1, 2):
         raise ValueError("Unsupported backup schema")
     with db.tx() as c:
         if c.execute(select(users.c.id).limit(1)).first():
